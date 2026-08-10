@@ -1,0 +1,145 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mmc-nirs"
+version = "0.1.0"
+authors = [
+  { name = "Stefan T. Radev" },
+  { name = "Condell Eastmond" },
+  { name = "Niels Bracher" },
+]
+description = "Precomputed MMC forward models and loading tools for SimNIRS"
+readme = { file = "README.md", content-type = "text/markdown" }
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12, <3.15"
+keywords = ["fnirs", "monte-carlo", "neuroimaging", "photon-transport", "simulation"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Science/Research",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering",
+]
+dependencies = [
+  "matplotlib>=3.10.8",
+  "numpy>=2.2.6",
+  "pmmc>=0.3.10",
+  "scipy>=1.15.3",
+  "trimesh>=4.8.3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.3.0",
+  "check-wheel-contents>=0.6.3",
+  "pre-commit>=4.5.1",
+  "ruff>=0.14.13",
+  "tox>=4.34.1",
+  "twine>=6.2.0",
+]
+test = [
+  "pytest>=9.0.2",
+  "pytest-cov>=7.0.0",
+  "pytest-rerunfailures>=16.1",
+  "pytest-xdist>=3.8.0",
+]
+all = ["mmc-nirs[dev,test]"]
+
+[project.urls]
+Homepage = "https://github.com/fnirs-simbox/mmc-nirs"
+Repository = "https://github.com/fnirs-simbox/mmc-nirs.git"
+Issues = "https://github.com/fnirs-simbox/mmc-nirs/issues"
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["mmc_nirs"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+exclude = [
+  ".bzr",
+  ".direnv",
+  ".eggs",
+  ".git",
+  ".git-rewrite",
+  ".hg",
+  ".ipynb_checkpoints",
+  ".mypy_cache",
+  ".nox",
+  ".pants.d",
+  ".pyenv",
+  ".pytest_cache",
+  ".pytype",
+  ".ruff_cache",
+  ".svn",
+  ".tox",
+  ".venv",
+  ".vscode",
+  "__pypackages__",
+  "_build",
+  "buck-out",
+  "build",
+  "dist",
+  "node_modules",
+  "site-packages",
+  "venv",
+  "*.ipynb",
+]
+line-length = 120
+indent-width = 4
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = []
+fixable = ["ALL"]
+unfixable = []
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/**/__init__.py" = ["F403"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+docstring-code-format = true
+docstring-code-line-length = "dynamic"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mmc_nirs*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+"mmc_nirs.experiments.pain" = [
+  "*.json",
+  "*.npy",
+  "*.npz",
+]
+
+[tool.check-wheel-contents]
+ignore = ["W002"]
+
+[tool.uv.sources]
+mmc-nirs = { workspace = true }
