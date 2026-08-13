@@ -1,20 +1,34 @@
-"""Load bundled MMC forward-model arrays."""
+"""Load MMC forward-model arrays."""
 
+from contextlib import contextmanager
 from importlib.resources import as_file
+from os import PathLike
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-from .config import _experiment_resource, load_config
+
+@contextmanager
+def _experiment_directory(configured_directory):
+    if isinstance(configured_directory, (str, PathLike)):
+        directory = Path(configured_directory).expanduser()
+        if not directory.is_dir():
+            raise FileNotFoundError(f"Experiment directory does not exist: {directory}")
+        yield directory
+        return
+
+    with as_file(configured_directory) as directory:
+        yield directory
 
 
-def load_mmc_files(experiment: str, use_jacobian: bool = True) -> dict[str, Any]:
+def load_mmc_files(experiment_config: dict[str, Any], use_jacobian: bool = True) -> dict[str, Any]:
     """Load the mesh, registered probe, and Jacobians for an experiment.
 
     Parameters
     ----------
-    experiment : str
-        Name of a bundled experiment.
+    experiment_config : dict
+        Config dictionary of an experiment.
     use_jacobian : bool, default=True
         Whether to load Jacobians, baseline measurements, channel indices, and the
         activation map.
@@ -30,12 +44,13 @@ def load_mmc_files(experiment: str, use_jacobian: bool = True) -> dict[str, Any]
         If Jacobian files use inconsistent channel indices or contain invalid
         one-based indices.
     FileNotFoundError
-        If the experiment or one of its configured data files does not exist.
+        If the experiment directory or one of its configured data files does
+        not exist.
     """
-    config = load_config(experiment)
-    file_paths = config["filepaths"]
+    file_paths = experiment_config["filepaths"]
+    configured_directory = file_paths["experiment_directory"]
 
-    with as_file(_experiment_resource(experiment)) as experiment_directory:
+    with _experiment_directory(configured_directory) as experiment_directory:
         with np.load(experiment_directory / file_paths["meshfile"]) as mesh_archive:
             nodes = mesh_archive[file_paths["nodes_var"]].copy()
 
