@@ -1,10 +1,10 @@
 import pytest
 
-from mmc_nirs import load_config
+from mmc_nirs import load_config, load_default_config
 
 
 def test_load_config_returns_bundled_experiment() -> None:
-    config = load_config("pain")
+    config = load_default_config("pain")
 
     assert config["name"] == "Pain"
     assert config["filepaths"]["meshfile"] == "mesh.npz"
@@ -13,9 +13,18 @@ def test_load_config_returns_bundled_experiment() -> None:
 @pytest.mark.parametrize("experiment", ["", "../pain", "pain/config.json"])
 def test_load_config_rejects_paths(experiment: str) -> None:
     with pytest.raises(ValueError, match="experiment must be"):
-        load_config(experiment)
+        load_default_config(experiment)
 
 
 def test_load_config_reports_unknown_experiment() -> None:
     with pytest.raises(FileNotFoundError, match="unknown"):
-        load_config("unknown")
+        load_default_config("unknown")
+
+
+def test_load_config_defaults_to_config_directory(tmp_path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text('{"filepaths": {}}', encoding="utf-8")
+
+    config = load_config(config_path)
+
+    assert config["filepaths"]["experiment_directory"] == tmp_path

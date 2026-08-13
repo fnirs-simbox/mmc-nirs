@@ -32,9 +32,9 @@ uv run pre-commit install
 Load a bundled experiment configuration:
 
 ```python
-from mmc_nirs import load_config
+from mmc_nirs import load_default_config
 
-config = load_config("pain")
+config = load_default_config("pain")
 ```
 
 Load the arrays required to initialize a SimNIRS simulator:
@@ -42,7 +42,19 @@ Load the arrays required to initialize a SimNIRS simulator:
 ```python
 from mmc_nirs import load_mmc_files
 
-forward_model = load_mmc_files("pain")
+forward_model = load_mmc_files(config)
+```
+
+An experiment outside the package can be loaded from its configuration file.
+By default, its data files are read from the directory containing `config.json`.
+An optional `experiment_directory` can point to a different directory and is
+resolved relative to the configuration file:
+
+```python
+from mmc_nirs import load_config, load_mmc_files
+
+config = load_config("experiments/finger_tapping/config.json")
+forward_model = load_mmc_files(config)
 ```
 
 ## Repository layout
