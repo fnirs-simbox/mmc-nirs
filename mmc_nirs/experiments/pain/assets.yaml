@@ -1,0 +1,11 @@
+repository: nielsbracher/fnirs-simbox-assets
+repo_type: dataset
+revision: be7e9e330f09f743a9569614c75ec8d84d151e4b
+remote_path: experiments/pain/assets
+files:
+  - activation_map.npz
+  - config.json
+  - jacobian_690.npz
+  - jacobian_830.npz
+  - mesh.npz
+  - probe.npz

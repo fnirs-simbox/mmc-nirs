@@ -1,18 +1,11 @@
 """Experiment configuration loading."""
 
 import json
-from importlib.resources import files
 from os import PathLike
 from pathlib import Path
 from typing import Any
 
-EXPERIMENTS_PACKAGE = "mmc_nirs.experiments"
-
-
-def _experiment_resource(experiment: str):
-    if not experiment or Path(experiment).name != experiment:
-        raise ValueError("experiment must be a non-empty name, not a path")
-    return files(EXPERIMENTS_PACKAGE).joinpath(experiment)
+from .assets import ensure_experiment_assets
 
 
 def _read_config(config_path, description: str) -> dict[str, Any]:
@@ -50,12 +43,13 @@ def load_default_config(experiment: str) -> dict[str, Any]:
     json.JSONDecodeError
         If the configuration is not valid JSON.
     """
-    config_resource = _experiment_resource(experiment).joinpath("config.json")
-    if not config_resource.is_file():
+    assets_directory = ensure_experiment_assets(experiment)
+    config_path = assets_directory / "config.json"
+    if not config_path.is_file():
         raise FileNotFoundError(f"No configuration found for experiment {experiment!r}")
 
-    config = _read_config(config_resource, f"for experiment {experiment!r}")
-    config["filepaths"]["experiment_directory"] = _experiment_resource(experiment)
+    config = _read_config(config_path, f"for experiment {experiment!r}")
+    config["filepaths"]["experiment_directory"] = assets_directory
     return config
 
 
