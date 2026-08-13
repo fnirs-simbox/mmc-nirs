@@ -29,6 +29,7 @@ classifiers = [
   "Topic :: Scientific/Engineering",
 ]
 dependencies = [
+  "h5py>=3.14",
   "matplotlib>=3.10.8",
   "numpy>=2.2.6",
   "pmmc>=0.3.10",
