@@ -3,12 +3,51 @@ import shutil
 from pathlib import Path
 
 import numpy as np
+import pytest
 
-from mmc_nirs import load_config, load_default_config, load_mmc_files
+from mmc_nirs import load_config, load_mmc_files
 
 
-def test_load_mmc_files_loads_forward_model() -> None:
-    data = load_mmc_files(load_default_config("pain"))
+@pytest.fixture
+def experiment_config_path(tmp_path: Path) -> Path:
+    experiment_directory = tmp_path / "pain"
+    experiment_directory.mkdir()
+    np.savez(experiment_directory / "mesh.npz", nodes=np.zeros((50, 3)))
+    np.savez(
+        experiment_directory / "probe.npz",
+        sourcepos=np.zeros((8, 3)),
+        detpos=np.zeros((16, 3)),
+        detnorms=np.zeros((16, 3)),
+    )
+    for wavelength in (690, 830):
+        np.savez(
+            experiment_directory / f"jacobian_{wavelength}.npz",
+            J=np.zeros((100, 50)),
+            mea0=np.zeros(100),
+            channelidx=np.arange(1, 13),
+        )
+    np.save(experiment_directory / "activation_map.npy", np.zeros(50))
+    config_path = experiment_directory / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "name": "Pain",
+                "filepaths": {
+                    "meshfile": "mesh.npz",
+                    "nodes_var": "nodes",
+                    "jacobians": ["jacobian_690.npz", "jacobian_830.npz"],
+                    "probefile": "probe.npz",
+                    "activation_map": "activation_map.npy",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def test_load_mmc_files_loads_forward_model(experiment_config_path: Path) -> None:
+    data = load_mmc_files(load_config(experiment_config_path))
 
     assert data["nodes"].shape == (50, 3)
     assert data["source_positions"].shape == (8, 3)
@@ -23,8 +62,8 @@ def test_load_mmc_files_loads_forward_model() -> None:
     assert np.all(np.diff(data["channel_idx"]) > 0)
 
 
-def test_load_mmc_files_can_skip_jacobians() -> None:
-    data = load_mmc_files(load_default_config("pain"), use_jacobian=False)
+def test_load_mmc_files_can_skip_jacobians(experiment_config_path: Path) -> None:
+    data = load_mmc_files(load_config(experiment_config_path), use_jacobian=False)
 
     assert data["jacobian_list"] == []
     assert data["measurements_zero_list"] == []
@@ -32,10 +71,9 @@ def test_load_mmc_files_can_skip_jacobians() -> None:
     assert data["activation_map"] is None
 
 
-def test_load_mmc_files_loads_external_experiment(tmp_path) -> None:
-    bundled_directory = Path(__file__).parents[2] / "mmc_nirs" / "experiments" / "pain"
+def test_load_mmc_files_loads_external_experiment(tmp_path, experiment_config_path: Path) -> None:
     experiment_directory = tmp_path / "finger_tapping"
-    shutil.copytree(bundled_directory, experiment_directory)
+    shutil.copytree(experiment_config_path.parent, experiment_directory)
 
     config_path = experiment_directory / "config.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))

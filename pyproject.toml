@@ -30,9 +30,11 @@ classifiers = [
 ]
 dependencies = [
   "h5py>=3.14",
+  "huggingface-hub>=1.27.0",
   "matplotlib>=3.10.8",
   "numpy>=2.2.6",
   "pmmc>=0.3.10",
+  "pyyaml>=6.0.3",
   "scipy>=1.15.3",
   "trimesh>=4.8.3",
 ]
@@ -133,11 +135,7 @@ include = ["mmc_nirs*"]
 namespaces = false
 
 [tool.setuptools.package-data]
-"mmc_nirs.experiments.pain" = [
-  "*.json",
-  "*.npy",
-  "*.npz",
-]
+"mmc_nirs.experiments" = ["*/assets.yaml"]
 
 [tool.check-wheel-contents]
 ignore = ["W002"]

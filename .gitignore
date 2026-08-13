@@ -209,6 +209,9 @@ tempCodeRunnerFile.py
 # Local external experiments used for manual loader testing
 /experiments/
 
+# Large experiment assets stored on Hugging Face
+/mmc_nirs/experiments/*/assets/
+
 # PyPI configuration file
 .pypirc
 
@@ -219,3 +222,4 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+/tokens/

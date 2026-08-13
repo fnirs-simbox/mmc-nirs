@@ -37,6 +37,11 @@ from mmc_nirs import load_default_config
 config = load_default_config("pain")
 ```
 
+This call checks `mmc_nirs/experiments/pain/assets/` and, when files are
+missing, downloads only the `pain` subtree described by its `assets.yaml`.
+The private dataset requires `HF_TOKEN` or a prior `hf auth login`; downloaded
+files are reused by later calls.
+
 Load the arrays required to initialize a SimNIRS simulator:
 
 ```python
@@ -59,8 +64,8 @@ forward_model = load_mmc_files(config)
 
 ## Repository layout
 
-- `mmc_nirs/experiments/<name>/` contains each experiment's `config.json`,
-  mesh, registered probe, activation map, and Jacobian arrays.
+- `mmc_nirs/experiments/<name>/assets.yaml` describes the experiment's remote
+  assets; downloaded files live in the ignored `assets/` directory beside it.
 - `mmc_nirs/loaders/` provides the public configuration and array loaders.
 - `mmc_nirs/registration/` registers source and detector positions to a head
   mesh.
