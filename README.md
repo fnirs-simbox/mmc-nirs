@@ -45,9 +45,9 @@ files are reused by later calls.
 Load the arrays required to initialize a SimNIRS simulator:
 
 ```python
-from mmc_nirs import load_mmc_files
+from mmc_nirs import load_light_transport_results
 
-forward_model = load_mmc_files(config)
+light_transport_results = load_light_transport_results(config)
 ```
 
 An experiment outside the package can be loaded from its configuration file.
@@ -56,10 +56,10 @@ An optional `experiment_directory` can point to a different directory and is
 resolved relative to the configuration file:
 
 ```python
-from mmc_nirs import load_config, load_mmc_files
+from mmc_nirs import load_config, load_light_transport_results
 
 config = load_config("experiments/finger_tapping/config.json")
-forward_model = load_mmc_files(config)
+light_transport_results = load_light_transport_results(config)
 ```
 
 ## Repository layout

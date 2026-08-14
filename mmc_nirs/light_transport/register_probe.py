@@ -1,4 +1,4 @@
-"""Probe-to-mesh registration utilities."""
+"""Register fNIRS probes to tetrahedral head meshes."""
 
 import numpy as np
 import trimesh
@@ -38,7 +38,7 @@ def register_probe(
         and one-based indices are accepted.
     probe_orientation : str, default="RAS"
         Three-letter orientation code describing the probe coordinate system.
-    probe_units : {"mm", "m"}, default="mm"
+    probe_units : {"mm", "cm", "m"}, default="mm"
         Unit used by the probe coordinates. Mesh coordinates are assumed to be
         millimetres.
     embedding_step : float, default=0.1
@@ -75,8 +75,11 @@ def register_probe(
     detectors = _as_coordinate_array(detector_coordinates, "detector_coordinates")
     nodes = _as_coordinate_array(mesh_nodes, "mesh_nodes")
     elements = _as_element_array(mesh_elements, nodes.shape[0])
-    if probe_units not in {"mm", "m"}:
-        raise ValueError("probe_units must be either 'mm' or 'm'")
+    unit_scales = {"mm": 1.0, "cm": 10.0, "m": 1_000.0}
+    try:
+        unit_scale = unit_scales[probe_units.lower()]
+    except (AttributeError, KeyError) as error:
+        raise ValueError("probe_units must be either 'mm', 'cm', or 'm'") from error
     if embedding_step <= 0:
         raise ValueError("embedding_step must be positive")
     if max_embedding_steps < 0:
@@ -88,7 +91,6 @@ def register_probe(
     except KeyError as error:
         raise ValueError(f"Unknown probe orientation {probe_orientation!r}") from error
 
-    unit_scale = 1_000.0 if probe_units == "m" else 1.0
     sources_ras = unit_scale * sources @ orientation_matrix.T
     detectors_ras = unit_scale * detectors @ orientation_matrix.T
 

@@ -1,4 +1,4 @@
-"""Load MMC forward-model arrays."""
+"""Load light-transport results used by the downstream fNIRS simulator."""
 
 from contextlib import contextmanager
 from importlib.resources import as_file
@@ -22,7 +22,7 @@ def _experiment_directory(configured_directory):
         yield directory
 
 
-def load_mmc_files(experiment_config: dict[str, Any], use_jacobian: bool = True) -> dict[str, Any]:
+def load_light_transport_results(experiment_config: dict[str, Any], use_jacobian: bool = True) -> dict[str, Any]:
     """Load the mesh, registered probe, and Jacobians for an experiment.
 
     Parameters
@@ -48,16 +48,18 @@ def load_mmc_files(experiment_config: dict[str, Any], use_jacobian: bool = True)
         not exist.
     """
     file_paths = experiment_config["filepaths"]
-    configured_directory = file_paths["experiment_directory"]
+    configured_directory = file_paths["experiment_dir"]
 
     with _experiment_directory(configured_directory) as experiment_directory:
-        with np.load(experiment_directory / file_paths["meshfile"]) as mesh_archive:
+        with np.load(experiment_directory / file_paths["meshfile"], allow_pickle=False) as mesh_archive:
             nodes = mesh_archive[file_paths["nodes_var"]].copy()
 
-        with np.load(experiment_directory / file_paths["probefile"]) as probe_archive:
+        with np.load(experiment_directory / file_paths["probefile"], allow_pickle=False) as probe_archive:
             source_positions = probe_archive["sourcepos"].copy()
             detector_positions = probe_archive["detpos"].copy()
             detector_norms = probe_archive["detnorms"].copy()
+            short_separation_indices = probe_archive["short_separation_indices"].copy()
+            long_separation_indices = probe_archive["long_separation_indices"].copy()
 
         jacobian_list: list[np.ndarray] = []
         measurements_zero_list: list[np.ndarray] = []
@@ -65,7 +67,7 @@ def load_mmc_files(experiment_config: dict[str, Any], use_jacobian: bool = True)
 
         if use_jacobian:
             for jacobian_file in file_paths.get("jacobians", []):
-                with np.load(experiment_directory / jacobian_file) as jacobian_archive:
+                with np.load(experiment_directory / jacobian_file, allow_pickle=False) as jacobian_archive:
                     current_indices = np.asarray(jacobian_archive["channelidx"]).reshape(-1)
                     if not np.issubdtype(current_indices.dtype, np.integer) or np.any(current_indices < 1):
                         raise ValueError(f"{jacobian_file} contains invalid one-based channel indices")
@@ -87,7 +89,6 @@ def load_mmc_files(experiment_config: dict[str, Any], use_jacobian: bool = True)
             )
         else:
             activation_map = None
-
     return {
         "source_positions": source_positions,
         "detector_positions": detector_positions,
@@ -96,6 +97,8 @@ def load_mmc_files(experiment_config: dict[str, Any], use_jacobian: bool = True)
         "jacobian_list": jacobian_list,
         "measurements_zero_list": measurements_zero_list,
         "channel_idx": channel_indices,
+        "short_separation_indices": short_separation_indices,
+        "long_separation_indices": long_separation_indices,
         "activation_map": activation_map,
         "use_jacobian": use_jacobian,
     }

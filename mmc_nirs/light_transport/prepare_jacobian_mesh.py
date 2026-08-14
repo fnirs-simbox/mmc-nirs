@@ -1,9 +1,19 @@
 """Prepare tetrahedral head meshes for Jacobian generation."""
 
+from collections.abc import Mapping
+from typing import Any
+
 import numpy as np
 from numpy.typing import ArrayLike
 
 from mmc_nirs.utils.mesh_utils import _as_coordinate_array, _as_element_array, make_orientation_matrices
+from mmc_nirs.utils.prepared_input_io import (
+    load_prepared_input,
+    resolve_prepared_input_path,
+    save_prepared_input,
+)
+
+_MESH_ARCHIVE_KEYS = {"nodes", "elements", "node_tissue_values"}
 
 
 def prepare_jacobian_mesh(
@@ -12,11 +22,14 @@ def prepare_jacobian_mesh(
     node_tissue_values: ArrayLike,
     orientation: str,
     units: str,
+    experiment_config: Mapping[str, Any],
     scalp_idx: int = 5,
     skull_idx: int = 4,
     CSF_idx: int = 3,
     gray_matter_idx: int = 2,
     white_matter_idx: int = 1,
+    save_mesh: bool = True,
+    overwrite: bool = False,
 ) -> dict[str, np.ndarray]:
     """Normalize a tetrahedral head mesh for Jacobian generation.
 
@@ -37,7 +50,17 @@ def prepare_jacobian_mesh(
         ``"LIA"``.
     units : {"mm", "cm", "m"}
         Units of the input node coordinates.
+    experiment_config : mapping
+        Experiment configuration containing ``experiment_dir`` and ``meshfile``.
+    save_mesh : bool, default=False
+        Whether to save the prepared mesh to its configured path.
+    overwrite : bool, default=False
+        Whether to recompute when a prepared mesh archive already exists.
     """
+    archive_path = resolve_prepared_input_path(experiment_config, "meshfile")
+    if archive_path.is_file() and not overwrite:
+        return load_prepared_input(archive_path, _MESH_ARCHIVE_KEYS)
+
     node_array = _as_coordinate_array(nodes, "nodes")
     element_array = _as_element_array(elements, len(node_array), "elements", allow_extra_columns=False)
 
@@ -73,4 +96,7 @@ def prepare_jacobian_mesh(
         raise ValueError(f"Unknown mesh orientation {orientation!r}") from error
     ras_nodes = node_array * unit_scale @ orientation_matrix.T
 
-    return {"nodes": ras_nodes, "elements": element_array, "node_tissue_values": normalized_tissues}
+    prepared = {"nodes": ras_nodes, "elements": element_array, "node_tissue_values": normalized_tissues}
+    if save_mesh:
+        save_prepared_input(archive_path, prepared)
+    return prepared
