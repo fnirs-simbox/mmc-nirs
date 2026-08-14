@@ -4,7 +4,7 @@ import pytest
 from mmc_nirs.loaders.prepare_jacobian_mesh import prepare_jacobian_mesh
 
 
-def test_prepare_jacobian_mesh_returns_mesh_without_saving() -> None:
+def test_prepare_jacobian_mesh_returns_mesh() -> None:
     prepared = prepare_jacobian_mesh(
         np.zeros((4, 3)),
         [[0, 1, 2, 3]],
@@ -18,8 +18,7 @@ def test_prepare_jacobian_mesh_returns_mesh_without_saving() -> None:
     np.testing.assert_array_equal(prepared["node_tissue_values"], [1, 2, 3, 4])
 
 
-def test_prepare_jacobian_mesh_normalizes_and_saves_mesh(tmp_path) -> None:
-    output = tmp_path / "mesh.npz"
+def test_prepare_jacobian_mesh_normalizes_mesh() -> None:
     nodes = np.array(
         [
             [0.001, 0.002, 0.003],
@@ -29,7 +28,7 @@ def test_prepare_jacobian_mesh_normalizes_and_saves_mesh(tmp_path) -> None:
         ]
     )
 
-    returned = prepare_jacobian_mesh(
+    mesh = prepare_jacobian_mesh(
         nodes,
         [[1, 2, 3, 4]],
         [50, 40, 30, 20],
@@ -40,15 +39,11 @@ def test_prepare_jacobian_mesh_normalizes_and_saves_mesh(tmp_path) -> None:
         CSF_idx=30,
         gray_matter_idx=40,
         white_matter_idx=50,
-        save_mesh=True,
-        filename=output,
     )
 
-    assert returned is None
-    with np.load(output) as mesh:
-        np.testing.assert_allclose(mesh["nodes"], nodes * 1000 @ np.array([[-1, 0, 0], [0, 0, 1], [0, -1, 0]]).T)
-        np.testing.assert_array_equal(mesh["elements"], [[0, 1, 2, 3]])
-        np.testing.assert_array_equal(mesh["node_tissue_values"], [1, 2, 3, 4])
+    np.testing.assert_allclose(mesh["nodes"], nodes * 1000 @ np.array([[-1, 0, 0], [0, 0, 1], [0, -1, 0]]).T)
+    np.testing.assert_array_equal(mesh["elements"], [[0, 1, 2, 3]])
+    np.testing.assert_array_equal(mesh["node_tissue_values"], [1, 2, 3, 4])
 
 
 @pytest.mark.parametrize(
@@ -88,13 +83,3 @@ def test_prepare_jacobian_mesh_rejects_duplicate_or_unknown_tissue_labels() -> N
 
     with pytest.raises(ValueError, match="must be unique"):
         prepare_jacobian_mesh(*arguments, scalp_idx=1)
-
-
-def test_prepare_jacobian_mesh_requires_npz_filename_only_when_saving(tmp_path) -> None:
-    arguments = (np.zeros((4, 3)), [[0, 1, 2, 3]], [1, 2, 3, 4], "RAS", "mm")
-
-    prepare_jacobian_mesh(*arguments)
-    with pytest.raises(ValueError, match="filename is required"):
-        prepare_jacobian_mesh(*arguments, save_mesh=True)
-    with pytest.raises(ValueError, match=".npz"):
-        prepare_jacobian_mesh(*arguments, save_mesh=True, filename=tmp_path / "mesh.mat")

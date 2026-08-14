@@ -1,8 +1,5 @@
 """Prepare tetrahedral head meshes for Jacobian generation."""
 
-from os import PathLike
-from pathlib import Path
-
 import numpy as np
 from numpy.typing import ArrayLike
 
@@ -20,9 +17,7 @@ def prepare_jacobian_mesh(
     CSF_idx: int = 3,
     gray_matter_idx: int = 2,
     white_matter_idx: int = 1,
-    save_mesh: bool = False,
-    filename: str | PathLike[str] | None = None,
-) -> dict[str, np.ndarray] | None:
+) -> dict[str, np.ndarray]:
     """Normalize a tetrahedral head mesh for Jacobian generation.
 
     Coordinates are converted to millimetres and reoriented to RAS. Element
@@ -42,8 +37,6 @@ def prepare_jacobian_mesh(
         ``"LIA"``.
     units : {"mm", "cm", "m"}
         Units of the input node coordinates.
-    filename : path-like or None, default=None
-        Destination ``.npz`` file. Required when ``save_mesh`` is true.
     """
     node_array = _as_coordinate_array(nodes, "nodes")
     element_array = _as_element_array(elements, len(node_array), "elements", allow_extra_columns=False)
@@ -80,17 +73,4 @@ def prepare_jacobian_mesh(
         raise ValueError(f"Unknown mesh orientation {orientation!r}") from error
     ras_nodes = node_array * unit_scale @ orientation_matrix.T
 
-    if save_mesh:
-        if filename is None:
-            raise ValueError("filename is required when save_mesh is True")
-        output_path = Path(filename)
-        if output_path.suffix.lower() != ".npz":
-            raise ValueError("filename must have a .npz suffix")
-        np.savez(
-            output_path,
-            nodes=ras_nodes,
-            elements=element_array,
-            node_tissue_values=normalized_tissues,
-        )
-        return None
     return {"nodes": ras_nodes, "elements": element_array, "node_tissue_values": normalized_tissues}

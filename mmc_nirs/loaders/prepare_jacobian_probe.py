@@ -1,7 +1,6 @@
 """Prepare fNIRS probes for Jacobian generation."""
 
 from os import PathLike
-from pathlib import Path
 
 import h5py
 import numpy as np
@@ -18,9 +17,7 @@ def prepare_jacobian_probe(
     channel_pairings: ArrayLike,
     short_separation_flag: str,
     short_separation_arg: float | list[int],
-    save_probe: bool = False,
-    filename: str | PathLike[str] | None = None,
-) -> dict[str, np.ndarray | str] | None:
+) -> dict[str, np.ndarray | str]:
     """Normalize probe coordinates and identify short-separation channels.
 
     Coordinates are converted to millimetres and RAS orientation. Channel
@@ -84,14 +81,6 @@ def prepare_jacobian_probe(
         "channel_pairings": pairs,
         "short_separation_indices": short_indices,
     }
-    if save_probe:
-        if filename is None:
-            raise ValueError("filename is required when save_probe is True")
-        output_path = Path(filename)
-        if output_path.suffix.lower() != ".npz":
-            raise ValueError("filename must have a .npz suffix")
-        np.savez(output_path, **probe)
-        return None
     return probe
 
 

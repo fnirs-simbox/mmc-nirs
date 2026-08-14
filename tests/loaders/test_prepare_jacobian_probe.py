@@ -5,7 +5,7 @@ import pytest
 from mmc_nirs.loaders.prepare_jacobian_probe import load_channel_pairs_from_snirf, prepare_jacobian_probe
 
 
-def test_prepare_jacobian_probe_returns_probe_without_saving() -> None:
+def test_prepare_jacobian_probe_returns_probe() -> None:
     sources = [[0, 0, 0], [10, 0, 0]]
     detectors = [[1, 0, 0], [30, 0, 0]]
     pairings = [[1, 1], [2, 2]]
@@ -25,33 +25,6 @@ def test_prepare_jacobian_probe_returns_probe_without_saving() -> None:
     assert probe["orientation"] == "RAS"
 
 
-def test_prepare_jacobian_probe_saves_loadable_npz(tmp_path) -> None:
-    output = tmp_path / "probe.npz"
-
-    returned = prepare_jacobian_probe(
-        [[1, 2, 3]],
-        [[4, 5, 6]],
-        "mm",
-        "RAS",
-        [[0, 0]],
-        "index",
-        [0],
-        True,
-        output,
-    )
-
-    assert returned is None
-    with np.load(output) as saved:
-        assert set(saved.files) == {
-            "source_positions",
-            "detector_positions",
-            "orientation",
-            "channel_pairings",
-            "short_separation_indices",
-        }
-        np.testing.assert_array_equal(saved["short_separation_indices"], [0])
-
-
 @pytest.mark.parametrize(
     ("sources", "detectors", "flag", "argument", "message"),
     [
@@ -65,21 +38,6 @@ def test_prepare_jacobian_probe_saves_loadable_npz(tmp_path) -> None:
 def test_prepare_jacobian_probe_rejects_invalid_arrays(sources, detectors, flag, argument, message) -> None:
     with pytest.raises((TypeError, ValueError), match=message):
         prepare_jacobian_probe(sources, detectors, "mm", "RAS", [[0, 0]], flag, argument)
-
-
-def test_prepare_jacobian_probe_rejects_non_npz_filename(tmp_path) -> None:
-    with pytest.raises(ValueError, match=".npz"):
-        prepare_jacobian_probe(
-            [[1, 2, 3]],
-            [[4, 5, 6]],
-            "mm",
-            "RAS",
-            [[0, 0]],
-            "index",
-            [0],
-            True,
-            tmp_path / "probe.mat",
-        )
 
 
 def test_load_channel_pairs_from_snirf_sorts_measurement_lists_numerically(tmp_path) -> None:
