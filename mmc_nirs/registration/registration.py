@@ -1,10 +1,15 @@
 """Probe-to-mesh registration utilities."""
 
-import itertools
-
 import numpy as np
 import trimesh
 from numpy.typing import ArrayLike
+
+from mmc_nirs.utils.mesh_utils import (
+    _as_coordinate_array,
+    _as_element_array,
+    _find_containing_elements,
+    make_orientation_matrices,
+)
 
 
 def register_probe(
@@ -66,10 +71,10 @@ def register_probe(
     RuntimeError
         If one or more optodes cannot be embedded within ``max_embedding_steps``.
     """
-    sources = _coordinate_array(source_coordinates, "source_coordinates")
-    detectors = _coordinate_array(detector_coordinates, "detector_coordinates")
-    nodes = _coordinate_array(mesh_nodes, "mesh_nodes")
-    elements = _element_array(mesh_elements, nodes.shape[0])
+    sources = _as_coordinate_array(source_coordinates, "source_coordinates")
+    detectors = _as_coordinate_array(detector_coordinates, "detector_coordinates")
+    nodes = _as_coordinate_array(mesh_nodes, "mesh_nodes")
+    elements = _as_element_array(mesh_elements, nodes.shape[0])
     if probe_units not in {"mm", "m"}:
         raise ValueError("probe_units must be either 'mm' or 'm'")
     if embedding_step <= 0:
@@ -154,112 +159,14 @@ def find_optode_directions(optode_coordinates: ArrayLike, mesh_nodes: ArrayLike)
     ValueError
         If an optode lies exactly at the mesh center.
     """
-    optodes = _coordinate_array(optode_coordinates, "optode_coordinates")
-    nodes = _coordinate_array(mesh_nodes, "mesh_nodes")
+    optodes = _as_coordinate_array(optode_coordinates, "optode_coordinates")
+    nodes = _as_coordinate_array(mesh_nodes, "mesh_nodes")
     mesh_center = (nodes.min(axis=0) + nodes.max(axis=0)) / 2.0
     directions = mesh_center - optodes
     lengths = np.linalg.norm(directions, axis=1, keepdims=True)
     if np.any(lengths == 0):
         raise ValueError("Cannot determine a direction for an optode at the mesh center")
     return directions / lengths
-
-
-def make_orientation_matrices() -> dict[str, np.ndarray]:
-    """Build transforms from every valid anatomical orientation to RAS.
-
-    Returns
-    -------
-    dict[str, numpy.ndarray]
-        Mapping of the 48 valid three-letter orientation codes to ``(3, 3)``
-        coordinate transformation matrices.
-
-    Notes
-    -----
-    Each code contains one left/right, one anterior/posterior, and one
-    superior/inferior axis. For row-oriented coordinates, apply a matrix as
-    ``coordinates @ matrix.T``.
-    """
-    axis_letters = (("R", "L"), ("A", "P"), ("S", "I"))
-    axis_vectors = {
-        "R": np.array([1.0, 0.0, 0.0]),
-        "L": np.array([-1.0, 0.0, 0.0]),
-        "A": np.array([0.0, 1.0, 0.0]),
-        "P": np.array([0.0, -1.0, 0.0]),
-        "S": np.array([0.0, 0.0, 1.0]),
-        "I": np.array([0.0, 0.0, -1.0]),
-    }
-
-    matrices: dict[str, np.ndarray] = {}
-    for axis_order in itertools.permutations(range(3)):
-        for signs in itertools.product(range(2), repeat=3):
-            code = "".join(axis_letters[axis][sign] for axis, sign in zip(axis_order, signs, strict=True))
-            matrices[code] = np.column_stack([axis_vectors[letter] for letter in code])
-    return matrices
-
-
-def _coordinate_array(values: ArrayLike, name: str) -> np.ndarray:
-    coordinates = np.asarray(values, dtype=float)
-    if coordinates.ndim != 2 or coordinates.shape[1] != 3 or coordinates.shape[0] == 0:
-        raise ValueError(f"{name} must be a non-empty array with shape (n, 3)")
-    if not np.all(np.isfinite(coordinates)):
-        raise ValueError(f"{name} must contain only finite values")
-    return coordinates.copy()
-
-
-def _element_array(values: ArrayLike, number_of_nodes: int) -> np.ndarray:
-    elements = np.asarray(values)
-    if elements.ndim != 2 or elements.shape[1] < 4 or elements.shape[0] == 0:
-        raise ValueError("mesh_elements must be a non-empty array with at least four columns")
-    elements = elements[:, :4]
-    if not np.issubdtype(elements.dtype, np.integer):
-        if not np.all(elements == np.floor(elements)):
-            raise ValueError("mesh_elements must contain integer vertex indices")
-        elements = elements.astype(np.intp)
-    else:
-        elements = elements.astype(np.intp, copy=False)
-
-    if elements.min() >= 1 and elements.max() <= number_of_nodes:
-        elements = elements - 1
-    if elements.min() < 0 or elements.max() >= number_of_nodes:
-        raise ValueError("mesh_elements contains an out-of-range vertex index")
-    return elements
-
-
-def _find_containing_elements(
-    points: np.ndarray,
-    nodes: np.ndarray,
-    elements: np.ndarray,
-    tolerance: float = 1e-10,
-) -> np.ndarray:
-    tetrahedra = nodes[elements]
-    origins = tetrahedra[:, 0]
-    edge_matrices = np.stack(
-        (
-            tetrahedra[:, 1] - origins,
-            tetrahedra[:, 2] - origins,
-            tetrahedra[:, 3] - origins,
-        ),
-        axis=-1,
-    )
-    determinants = np.linalg.det(edge_matrices)
-    valid_elements = np.flatnonzero(np.abs(determinants) > np.finfo(float).eps)
-    inverse_edges = np.linalg.inv(edge_matrices[valid_elements])
-
-    containing_elements = np.full(points.shape[0], -1, dtype=np.intp)
-    for point_index, point in enumerate(points):
-        local_coordinates = np.einsum(
-            "eij,ej->ei",
-            inverse_edges,
-            point - origins[valid_elements],
-        )
-        barycentric_coordinates = np.column_stack((1.0 - local_coordinates.sum(axis=1), local_coordinates))
-        is_inside = np.all(barycentric_coordinates >= -tolerance, axis=1) & np.all(
-            barycentric_coordinates <= 1.0 + tolerance,
-            axis=1,
-        )
-        if np.any(is_inside):
-            containing_elements[point_index] = valid_elements[np.flatnonzero(is_inside)[0]]
-    return containing_elements
 
 
 def _embed_optodes(

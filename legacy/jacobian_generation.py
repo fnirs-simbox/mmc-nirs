@@ -1,4 +1,6 @@
-#Script for generating Jacobians. needs to be run twice for each dataset. Needs segmented mesh, wavelength to simulate, an experimental file to define which channels are used
+"""Legacy Jacobian-generation prototype retained for historical reference."""
+
+# Script for generating Jacobians. needs to be run twice for each dataset. Needs segmented mesh, wavelength to simulate, an experimental file to define which channels are used
 #a probe file and its coordinate orientation
 
 import pmmc
@@ -15,7 +17,9 @@ from scipy.spatial import Delaunay
 from scipy.io import loadmat, savemat
 import subprocess
 
-from jacobian_utils import register_probe, mmc2json_py, read_cli_output, find_closest_node_2norm, make_to_ras_dict
+from mmc_nirs.registration import register_probe
+from mmc_nirs.utils.jacobian_utils import mmc_to_json, read_cli_output
+from mmc_nirs.utils.mesh_utils import find_closest_node
 
 #the mesh file you will need to change
 meshfile = loadmat('../mat_files/NewColinMesh.mat')
@@ -165,7 +169,7 @@ ndet = det_pts.shape[0]
 #finding the closest node to each detector
 closest_node_idx = []
 for det_idx in range(ndet):
-    closest_node, _ = find_closest_node_2norm(meshnodes[:,:3],reg_det_pos[det_idx,:])
+    closest_node, _ = find_closest_node(meshnodes[:,:3],reg_det_pos[det_idx,:])
     closest_node_idx.append(closest_node)
 
 #defining the detector radius (and moving it to the closest node location as a bit of a hack to prevent empty detectors)
@@ -183,7 +187,7 @@ Green_s = np.zeros([nsrc,len(cfg['node'])])
 Green_sd = np.zeros([nsrc * ndet, 1])
 
 for src_idx in range(0,nsrc):
-    
+
     #specify which source we are running the simulation for
     srccfg['srcpos'] = cfg['srcpos'][src_idx]
     srccfg['e0'] = int(e0_src[src_idx]+1)
@@ -191,7 +195,7 @@ for src_idx in range(0,nsrc):
 
     #creating the config file to run from command line
     stub = 'singlesource'
-    mmc2json_py(srccfg,stub + '.json')
+    mmc_to_json(srccfg,stub + '.json')
 
     while not os.path.isfile('singlesource.dat'):
         try:
@@ -206,10 +210,10 @@ for src_idx in range(0,nsrc):
     print('succesfully ran source number ' + str(src_idx))
     os.remove(stub + '.dat')
     os.remove(stub + '.mch')
-    
+
     #calculating Green's function for source and source-detector pairs
     Green_s[src_idx,:] = np.transpose(flux) * srccfg['tstep']
-    
+
     w0 = pmmc.detweight(detp,np.array(srccfg['prop']))
     for det_idx in range(ndet):
         #indexing over a flattened source-detector matrix
@@ -231,7 +235,7 @@ Green_d = np.zeros([ndet,len(cfg['node'])])
 
 
 for det_idx in range(ndet):
-    
+
     #specify which detector we are running the simulation for
     detcfg['srcpos'] = srccfg['detpos'][det_idx][:3]
     detcfg['e0'] = int(e0_det[det_idx]+1)
@@ -239,7 +243,7 @@ for det_idx in range(ndet):
 
     #creating the config file to run from command line
     stub = 'singledetector'
-    mmc2json_py(detcfg,stub + '.json')
+    mmc_to_json(detcfg,stub + '.json')
     while not os.path.isfile('singledetector.dat'):
         try:
             det_output = subprocess.run(['../mmc/bin/mmc.exe',
@@ -247,12 +251,12 @@ for det_idx in range(ndet):
                             '-d', '1'],timeout=900,capture_output=True)
         except:
             print('Timed out on detector number ' + str(det_idx) +  ', trying again')
-    
+
     flux = read_cli_output(stub)
     print('succesfully ran detector number ' + str(det_idx))
     os.remove(stub + '.dat')
     #os.remove(stub + '.mch')
-    
+
     #calculating Green's function for detectors
     Green_d[det_idx,:] = np.transpose(flux) * detcfg['tstep']
 

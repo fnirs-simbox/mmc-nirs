@@ -1,4 +1,4 @@
-"""Low-level MMC serialization and output helpers."""
+"""Low-level MMC serialization and Jacobian-generation helpers."""
 
 from __future__ import annotations
 
@@ -285,37 +285,3 @@ def read_cli_output(file_stub: str | Path) -> tuple[np.ndarray, dict[str, np.nda
         "exit_directions": photon_data[:, position_end:direction_end],
     }
     return flux_data[:, 1], detected_photons
-
-
-def find_closest_node(nodes: ArrayLike, target_point: ArrayLike) -> tuple[int, np.ndarray]:
-    """Find the mesh node closest to a target point in Euclidean distance.
-
-    Parameters
-    ----------
-    nodes : array-like
-        Two-dimensional node coordinate array with shape ``(n_nodes, n_dimensions)``.
-    target_point : array-like
-        Coordinates of one target point with shape ``(n_dimensions,)``.
-
-    Returns
-    -------
-    index : int
-        Index of the closest node.
-    node : numpy.ndarray
-        Coordinates of the closest node.
-
-    Raises
-    ------
-    ValueError
-        If the input shapes are incompatible or no nodes are provided.
-    """
-    node_array = np.asarray(nodes)
-    target = np.asarray(target_point)
-    if node_array.ndim != 2 or node_array.shape[0] == 0:
-        raise ValueError("nodes must be a non-empty two-dimensional array")
-    if target.shape != (node_array.shape[1],):
-        raise ValueError("target_point must have one coordinate per node dimension")
-
-    squared_distances = np.sum((node_array - target) ** 2, axis=1)
-    closest_index = int(np.argmin(squared_distances))
-    return closest_index, node_array[closest_index]
