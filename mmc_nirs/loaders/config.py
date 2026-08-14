@@ -49,7 +49,7 @@ def load_default_config(experiment: str) -> dict[str, Any]:
         raise FileNotFoundError(f"No configuration found for experiment {experiment!r}")
 
     config = _read_config(config_path, f"for experiment {experiment!r}")
-    config["filepaths"]["experiment_directory"] = assets_directory
+    config["filepaths"]["experiment_dir"] = assets_directory
     return config
 
 
@@ -57,8 +57,8 @@ def load_config(config_path: str | PathLike[str]) -> dict[str, Any]:
     """Load an experiment configuration from a JSON file.
 
     Relative experiment directories are resolved from the directory containing
-    the configuration file. If ``experiment_directory`` is absent or empty,
-    the data files are assumed to be stored alongside ``config.json``.
+    the configuration file. If ``experiment_dir`` is absent or empty, the data
+    files are assumed to be stored alongside ``config.json``.
 
     Parameters
     ----------
@@ -73,7 +73,7 @@ def load_config(config_path: str | PathLike[str]) -> dict[str, Any]:
     Raises
     ------
     FileNotFoundError
-        If the configuration or configured experiment directory does not exist.
+        If the configuration does not exist.
     json.JSONDecodeError
         If the configuration is not valid JSON.
     ValueError
@@ -85,16 +85,14 @@ def load_config(config_path: str | PathLike[str]) -> dict[str, Any]:
 
     path = path.resolve()
     config = _read_config(path, f"at {path}")
-    configured_directory = config["filepaths"].get("experiment_directory", "")
+    configured_directory = config["filepaths"].get("experiment_dir", "")
     if not isinstance(configured_directory, (str, PathLike)):
-        raise ValueError("'experiment_directory' must be a path")
+        raise ValueError("'experiment_dir' must be a path")
 
-    experiment_directory = Path(configured_directory).expanduser()
-    if not experiment_directory.is_absolute():
-        experiment_directory = path.parent / experiment_directory
-    experiment_directory = experiment_directory.resolve()
-    if not experiment_directory.is_dir():
-        raise FileNotFoundError(f"Experiment directory does not exist: {experiment_directory}")
+    experiment_dir = Path(configured_directory).expanduser()
+    if not experiment_dir.is_absolute():
+        experiment_dir = path.parent / experiment_dir
+    experiment_dir = experiment_dir.resolve()
 
-    config["filepaths"]["experiment_directory"] = experiment_directory
+    config["filepaths"]["experiment_dir"] = experiment_dir
     return config

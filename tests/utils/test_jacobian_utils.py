@@ -1,23 +1,6 @@
 import json
 
-import numpy as np
-import pytest
-
-from mmc_nirs.utils import find_closest_node, mmc_to_json, save_mmc_mesh
-
-
-def test_find_closest_node_returns_index_and_coordinates() -> None:
-    nodes = np.array([[0.0, 0.0, 0.0], [2.0, 1.0, 0.0], [5.0, 5.0, 5.0]])
-
-    index, node = find_closest_node(nodes, [1.8, 1.1, 0.0])
-
-    assert index == 1
-    np.testing.assert_array_equal(node, nodes[1])
-
-
-def test_find_closest_node_validates_target_shape() -> None:
-    with pytest.raises(ValueError, match="one coordinate"):
-        find_closest_node(np.zeros((2, 3)), [0.0, 0.0])
+from mmc_nirs.utils.jacobian_utils import mmc_to_json, save_mmc_mesh
 
 
 def test_mmc_to_json_returns_embedded_document() -> None:

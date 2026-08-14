@@ -1,7 +1,7 @@
-"""Precomputed MMC forward models and loading tools for SimNIRS."""
+"""Light-transport preparation and loading tools for SimNIRS."""
 
 from importlib.metadata import version
 
-from .loaders import load_config, load_default_config, load_mmc_files
+from .loaders import load_config, load_default_config, load_light_transport_results
 
 __version__ = version("mmc-nirs")
