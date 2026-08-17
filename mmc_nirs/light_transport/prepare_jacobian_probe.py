@@ -1,10 +1,8 @@
 """Prepare fNIRS probes for Jacobian generation."""
 
 from collections.abc import Mapping
-from os import PathLike
 from typing import Any
 
-import h5py
 import numpy as np
 from numpy.typing import ArrayLike
 
@@ -14,6 +12,11 @@ from mmc_nirs.utils.prepared_input_io import (
     save_prepared_input,
 )
 
+from .probe_utils import (
+    _pairing_indices,
+    _plot_probe_registration,
+    load_channel_pairs_from_snirf as load_channel_pairs_from_snirf,
+)
 from .register_probe import register_probe
 
 _PROBE_ARCHIVE_KEYS = {
@@ -103,7 +106,6 @@ def prepare_jacobian_probe(
         probe_units=units,
         embedding_step=embedding_step,
         max_embedding_steps=max_embedding_steps,
-        plot=plot,
     )
 
     source_indices = _pairing_indices(pairs[:, 0], len(registered_sources), "source")
@@ -128,29 +130,17 @@ def prepare_jacobian_probe(
         "short_separation_indices": short_indices,
         "long_separation_indices": long_indices,
     }
+    if plot:
+        _plot_probe_registration(
+            mesh_nodes,
+            mesh_elements,
+            registered_sources,
+            registered_detectors,
+            source_directions,
+            detector_directions,
+            source_indices,
+            detector_indices,
+        )
     if save_probe:
         save_prepared_input(archive_path, probe)
     return probe
-
-
-def _pairing_indices(indices: np.ndarray, size: int, coordinate_type: str) -> np.ndarray:
-    if indices.min() >= 1 and indices.max() <= size:
-        return indices - 1
-    if indices.min() < 0 or indices.max() >= size:
-        raise ValueError(f"channel_pairings contains an out-of-range {coordinate_type} index")
-    return indices
-
-
-def load_channel_pairs_from_snirf(snirf_file: str | PathLike[str]) -> np.ndarray:
-    """Load source-detector channel pairings from a SNIRF file."""
-    with h5py.File(snirf_file, "r") as snirf:
-        data_group = snirf["nirs"]["data1"]
-        measurement_keys = sorted(
-            (key for key in data_group if key.startswith("measurementList")),
-            key=lambda key: int(key.removeprefix("measurementList")),
-        )
-        pairs = [
-            [int(data_group[key]["sourceIndex"][()]), int(data_group[key]["detectorIndex"][()])]
-            for key in measurement_keys
-        ]
-    return np.asarray(pairs, dtype=int)

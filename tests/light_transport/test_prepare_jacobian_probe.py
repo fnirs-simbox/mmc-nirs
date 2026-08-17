@@ -8,6 +8,7 @@ from mmc_nirs.light_transport.prepare_jacobian_mesh import prepare_jacobian_mesh
 from mmc_nirs.loaders import load_light_transport_results
 
 probe_module = importlib.import_module("mmc_nirs.light_transport.prepare_jacobian_probe")
+probe_utils_module = importlib.import_module("mmc_nirs.light_transport.probe_utils")
 prepare_jacobian_probe = probe_module.prepare_jacobian_probe
 
 
@@ -249,9 +250,23 @@ def test_load_channel_pairs_from_snirf_sorts_measurement_lists_numerically(tmp_p
         data_group = snirf.create_group("nirs").create_group("data1")
         for measurement_number, source_index, detector_index in ((10, 3, 4), (2, 1, 2)):
             measurement = data_group.create_group(f"measurementList{measurement_number}")
-            measurement.create_dataset("sourceIndex", data=source_index)
-            measurement.create_dataset("detectorIndex", data=detector_index)
+            measurement.create_dataset("sourceIndex", data=[source_index])
+            measurement.create_dataset("detectorIndex", data=[detector_index])
 
     pairings = probe_module.load_channel_pairs_from_snirf(snirf_path)
 
     np.testing.assert_array_equal(pairings, [[1, 2], [3, 4]])
+
+
+def test_signed_surface_distances_are_negative_inside_and_positive_outside() -> None:
+    nodes = np.array([[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]])
+    elements = np.array([[0, 1, 2, 3]])
+
+    distances = probe_utils_module._signed_surface_distances(
+        np.array([[1.0, 1.0, 1.0], [10.0, 10.0, 10.0]]),
+        nodes,
+        elements,
+    )
+
+    assert distances[0] < 0
+    assert distances[1] > 0
