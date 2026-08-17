@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import json
 import os
 import math
- 
+
 
 def make_to_ras_dict():
 
@@ -29,7 +29,7 @@ def make_to_ras_dict():
 
     http://www.grahamwideman.com/gw/brain/orientation/orientterms.htm
 
- 
+
 
     Convention:
 
@@ -53,11 +53,11 @@ def make_to_ras_dict():
 
     ]
 
- 
+
 
     to_ras = {}
 
- 
+
 
     # Permute which world axis each of (i, j, k) aligns to
 
@@ -81,7 +81,7 @@ def make_to_ras_dict():
 
             code = ''.join(code_letters)
 
- 
+
 
             # Build the 3x3 transform matrix columns (unit vectors in RAS basis)
 
@@ -99,15 +99,15 @@ def make_to_ras_dict():
 
             to_ras[code] = M
 
- 
+
 
     return to_ras
 
- 
+
 
 to_ras = make_to_ras_dict()
 
- 
+
 
 # --- Example checks ---
 
@@ -125,7 +125,7 @@ to_ras = make_to_ras_dict()
 
 def register_probe(source_coords, detector_coords, mesh_nodes, mesh_elem, scalp_idx, probe_orientation='RAS', probe_units='mm'):
     #TODO needs docstring
-    
+
     #converting probe coords to mm
     if probe_units == 'mm':
         pass
@@ -134,13 +134,13 @@ def register_probe(source_coords, detector_coords, mesh_nodes, mesh_elem, scalp_
         detector_coords = detector_coords * 1000
     else:
         raise ValueError("`probe_units` must be in m or mm")
-    
+
     to_ras = make_to_ras_dict()
 
     #loading relevant transformation matrix from lookup table
     #load lookup table instead of creating it every time
     transformation_matrix = to_ras[probe_orientation]
-    
+
     #reorienting optode coords to RAS via selected transformation matrix
     num_src = source_coords.shape[0]
     probe_pts = np.vstack([source_coords, detector_coords])
@@ -167,14 +167,14 @@ def register_probe(source_coords, detector_coords, mesh_nodes, mesh_elem, scalp_
         in_mask = in_src_mask == True
         reg_source_coords[in_mask] += source_directions[in_mask] * -1
         in_src_mask, _ = points_in_tetrahedral_mesh(reg_source_coords,mesh_elem,mesh_nodes)
-    
+
     in_det_mask, _ = points_in_tetrahedral_mesh(reg_detector_coords,mesh_elem,mesh_nodes)
     while np.any(in_det_mask):
         in_mask = in_det_mask == True
         reg_detector_coords[in_mask] += detector_directions[in_mask] * -1
         in_det_mask, _ = points_in_tetrahedral_mesh(reg_detector_coords,mesh_elem,mesh_nodes)
 
-    
+
     #iteratively embedding all sources beneath the mesh surface
     while np.any(~in_src_mask):
         out_mask = in_src_mask == False
@@ -195,15 +195,15 @@ def register_probe(source_coords, detector_coords, mesh_nodes, mesh_elem, scalp_
     ax.scatter(mesh_nodes[:,0],mesh_nodes[:,1],mesh_nodes[:,2],s=0.5,alpha=0.05, color='tan')
     ax.scatter(reg_source_coords[:,0],reg_source_coords[:,1],reg_source_coords[:,2], color='red')
     ax.scatter(reg_detector_coords[:,0],reg_detector_coords[:,1],reg_detector_coords[:,2], color='blue')
-    
+
     ax.quiver(reg_source_coords[:,0],reg_source_coords[:,1],reg_source_coords[:,2],
               source_directions[:,0],source_directions[:,1],source_directions[:,2],
               color='red',length=15,)
-    
+
     # ax.quiver(reg_detector_coords[:,0],reg_detector_coords[:,1],reg_detector_coords[:,2],
     #           detector_directions[:,0],detector_directions[:,1],detector_directions[:,2],
     #           color='blue',length=15,)
-    
+
 
     ax.view_init(elev=45, azim=45)
 
@@ -250,19 +250,19 @@ def find_optode_directions(optode_coords, mesh_nodes):
     #assumes head is roughly spherical and returns ndarray of unit vectors pointing from input point to mesh center
     optode_dirs = []
     midmeshpoint = (mesh_nodes.max(0) + mesh_nodes.min(0)) / 2
-    
+
     for opt_idx in range(optode_coords.shape[0]):
-        
+
         #finding direction of optode placement towards center of head mesh
         current_optode = optode_coords[opt_idx,:]
         optode_dir = midmeshpoint - current_optode
-        
+
         #converting to unit length for mmc
         unit_optode_dir = optode_dir / np.linalg.norm(optode_dir)
-        
+
         #appending to list
         optode_dirs.append(unit_optode_dir)
-        
+
     #converting to numpy array
     optode_dirs = np.array(optode_dirs)
     return optode_dirs
