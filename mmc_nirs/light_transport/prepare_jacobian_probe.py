@@ -54,6 +54,57 @@ def prepare_jacobian_probe(
     Otherwise, probe coordinates are registered to the prepared mesh and
     short- and long-separation channels are identified from registered
     coordinates.
+
+    Parameters
+    ----------
+    source_positions : array-like
+        Source coordinates with shape ``(n_sources, 3)``.
+    detector_positions : array-like
+        Detector coordinates with shape ``(n_detectors, 3)``.
+    prepared_mesh : mapping
+        Prepared tetrahedral mesh containing a ``"nodes"`` array with shape
+        ``(n_nodes, 3)`` and an ``"elements"`` array with shape
+        ``(n_elements, 4)``. Element indices may be zero-based or one-based.
+    units : {"mm", "cm", "m"}
+        Unit used by ``source_positions`` and ``detector_positions``. This is a
+        scalar string; prepared mesh coordinates are assumed to be millimetres.
+    orientation : str
+        Three-letter anatomical orientation code describing the probe axes,
+        such as ``"RAS"`` or ``"LIA"``. This is a scalar string containing one
+        letter from each anatomical axis pair.
+    channel_pairings : array-like
+        Source-detector index pairs with shape ``(n_channels, 2)``. Indices may
+        be zero-based or one-based.
+    short_separation_flag : {"distance", "index"}
+        Scalar string selecting how short-separation channels are identified.
+    short_separation_arg : float or list[int]
+        A finite, non-negative scalar distance in millimetres when
+        ``short_separation_flag`` is ``"distance"``. When the flag is
+        ``"index"``, this must be a one-dimensional list of zero-based channel
+        indices with length ``n_short_channels``.
+    experiment_config : mapping
+        Configuration containing a ``"filepaths"`` mapping. That mapping must
+        contain scalar path values for ``"experiment_dir"`` and ``"probefile"``;
+        ``"probefile"`` must name an NPZ file.
+    embedding_step : float, default=0.1
+        Positive scalar embedding distance in millimetres applied per iteration.
+    max_embedding_steps : int, default=1000
+        Non-negative scalar maximum number of embedding iterations.
+    plot : bool, default=False
+        Scalar flag indicating whether to create the registration diagnostic.
+    save_probe : bool, default=True
+        Scalar flag indicating whether to save the prepared probe NPZ archive.
+    overwrite : bool, default=False
+        Scalar flag indicating whether an existing prepared archive should be
+        replaced instead of loaded.
+
+    Returns
+    -------
+    dict[str, numpy.ndarray]
+        Prepared probe arrays. Coordinate and direction fields have shapes
+        ``(n_sources, 3)`` or ``(n_detectors, 3)``; element-index fields have
+        shapes ``(n_sources,)`` or ``(n_detectors,)``; ``channel_pairings`` has
+        shape ``(n_channels, 2)``; and separation-index fields are one-dimensional.
     """
     archive_path = resolve_prepared_input_path(experiment_config, "probefile")
     if archive_path.is_file() and not overwrite:
