@@ -1,0 +1,24 @@
+{
+    "description": "pain assessment task from forward model paper",
+    "name": "Pain",
+    "experiment_dir": "experiments/pain",
+    "filepaths": {
+        "meshfile": "mesh.npz",
+        "nodes_var": "nodes",
+        "jacobians": ["jacobian_690.npz", "jacobian_830.npz"],
+        "probefile": "probe.npz",
+        "activation_map": "activation_map.npz",
+        "optical_properties": "optical_properties.json"
+    },
+    "mmc_settings" : {
+    "nphoton" : 5e9,
+    "tstart" : 0,
+    "tend" : 5e-9,
+    "tstep" : 5e-9,
+    "method" : "elem",
+    "issaveexit" : 1,
+    "issavedet" : 1,
+    "outputtype" : "flux"
+    },
+    "wavelengths" : [690, 830]
+}
