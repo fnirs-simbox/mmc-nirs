@@ -8,19 +8,19 @@ from mmc_nirs.light_transport.prepare_jacobian_mesh import prepare_jacobian_mesh
 from mmc_nirs.loaders import load_light_transport_results
 
 probe_module = importlib.import_module("mmc_nirs.light_transport.prepare_jacobian_probe")
-probe_utils_module = importlib.import_module("mmc_nirs.light_transport.probe_utils")
+probe_utils_module = importlib.import_module("mmc_nirs.utils.probe_utils")
 prepare_jacobian_probe = probe_module.prepare_jacobian_probe
 
 
 @pytest.fixture
 def experiment_config(tmp_path):
     return {
+        "experiment_dir": tmp_path / "prepared",
         "filepaths": {
-            "experiment_dir": tmp_path / "prepared",
             "meshfile": "mesh.npz",
             "nodes_var": "nodes",
             "probefile": "probe.npz",
-        }
+        },
     }
 
 
@@ -29,7 +29,7 @@ def prepared_mesh():
     return {
         "nodes": np.array([[0, 0, 0], [20, 0, 0], [0, 20, 0], [0, 0, 20]], dtype=float),
         "elements": np.array([[0, 1, 2, 3]]),
-        "node_tissue_values": np.array([1, 2, 3, 4]),
+        "element_tissue_values": np.array([1]),
     }
 
 
@@ -98,6 +98,7 @@ def test_prepare_jacobian_probe_registers_with_prepared_mesh(
         np.testing.assert_array_equal(probe[key], value)
     np.testing.assert_array_equal(probe["short_separation_indices"], [0])
     np.testing.assert_array_equal(probe["long_separation_indices"], [1])
+    np.testing.assert_array_equal(probe["channel_pairings"], [[0, 0], [1, 1]])
 
     args, kwargs = fake_registration[0]
     assert args[0] is sources
@@ -112,7 +113,7 @@ def test_prepare_jacobian_probe_reuses_existing_archive_before_registration(
     experiment_config,
     monkeypatch,
 ) -> None:
-    output_dir = experiment_config["filepaths"]["experiment_dir"]
+    output_dir = experiment_config["experiment_dir"]
     output_dir.mkdir()
     cached = {
         "sourcepos": np.ones((1, 3)),
@@ -140,7 +141,7 @@ def test_prepare_jacobian_probe_overwrites_existing_archive(
     registration_result,
     fake_registration,
 ) -> None:
-    output_dir = experiment_config["filepaths"]["experiment_dir"]
+    output_dir = experiment_config["experiment_dir"]
     output_dir.mkdir()
     cached = {key: np.zeros(1) for key in probe_module._PROBE_ARCHIVE_KEYS}
     np.savez(output_dir / "probe.npz", **cached)
@@ -168,7 +169,7 @@ def test_prepare_jacobian_probe_overwrites_existing_archive(
 
 
 def test_prepare_jacobian_probe_rejects_incompatible_cache(experiment_config) -> None:
-    output_dir = experiment_config["filepaths"]["experiment_dir"]
+    output_dir = experiment_config["experiment_dir"]
     output_dir.mkdir()
     np.savez(output_dir / "probe.npz", sourcepos=np.zeros((1, 3)))
 
@@ -217,7 +218,7 @@ def test_saved_prepared_inputs_are_loadable_downstream(
     mesh = prepare_jacobian_mesh(
         np.array([[0, 0, 0], [20, 0, 0], [0, 20, 0], [0, 0, 20]], dtype=float),
         [[0, 1, 2, 3]],
-        [1, 2, 3, 4],
+        [1],
         "RAS",
         "mm",
         experiment_config,

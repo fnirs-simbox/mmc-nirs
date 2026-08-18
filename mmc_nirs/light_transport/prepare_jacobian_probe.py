@@ -7,26 +7,20 @@ import numpy as np
 from numpy.typing import ArrayLike
 
 from mmc_nirs.utils.prepared_input_io import (
-    load_prepared_input,
+    load_npz_archive,
     resolve_prepared_input_path,
-    save_prepared_input,
+    save_npz_archive,
 )
-
-from .probe_utils import (
-    _pairing_indices,
+from mmc_nirs.utils.probe_utils import (
+    PREPARED_PROBE_KEYS,
     _plot_probe_registration,
+    as_channel_pairing_array,
     load_channel_pairs_from_snirf as load_channel_pairs_from_snirf,
+    normalize_channel_pairings,
 )
 from .register_probe import register_probe
 
-_PROBE_ARCHIVE_KEYS = {
-    "sourcepos",
-    "detpos",
-    "sourcedir",
-    "detnorms",
-    "source_elements",
-    "detector_elements",
-    "channel_pairings",
+_PROBE_ARCHIVE_KEYS = PREPARED_PROBE_KEYS | {
     "short_separation_indices",
     "long_separation_indices",
 }
@@ -83,9 +77,8 @@ def prepare_jacobian_probe(
         ``"index"``, this must be a one-dimensional list of zero-based channel
         indices with length ``n_short_channels``.
     experiment_config : mapping
-        Configuration containing a ``"filepaths"`` mapping. That mapping must
-        contain scalar path values for ``"experiment_dir"`` and ``"probefile"``;
-        ``"probefile"`` must name an NPZ file.
+        Configuration with a top-level ``"experiment_dir"`` path and a
+        ``"filepaths"`` mapping containing an NPZ ``"probefile"`` name.
     embedding_step : float, default=0.1
         Positive scalar embedding distance in millimetres applied per iteration.
     max_embedding_steps : int, default=1000
@@ -108,7 +101,7 @@ def prepare_jacobian_probe(
     """
     archive_path = resolve_prepared_input_path(experiment_config, "probefile")
     if archive_path.is_file() and not overwrite:
-        return load_prepared_input(archive_path, _PROBE_ARCHIVE_KEYS)
+        return load_npz_archive(archive_path, _PROBE_ARCHIVE_KEYS)
 
     normalized_flag = short_separation_flag.lower()
     if normalized_flag not in {"distance", "index"}:
@@ -129,13 +122,7 @@ def prepare_jacobian_probe(
     except (KeyError, TypeError) as error:
         raise ValueError("prepared_mesh must contain 'nodes' and 'elements'") from error
 
-    pairs = np.asarray(channel_pairings)
-    if pairs.ndim != 2 or pairs.shape[0] == 0 or pairs.shape[1] != 2:
-        raise ValueError("channel_pairings must be a non-empty array with shape (n_channels, 2)")
-    if not np.issubdtype(pairs.dtype, np.integer):
-        if not np.all(np.isfinite(pairs)) or not np.all(pairs == np.floor(pairs)):
-            raise ValueError("channel_pairings must contain integer indices")
-    pairs = pairs.astype(np.intp, copy=True)
+    pairs = as_channel_pairing_array(channel_pairings)
     if normalized_flag == "index":
         short_indices = np.asarray(short_separation_arg, dtype=np.intp)
         if np.any(short_indices < 0) or np.any(short_indices >= len(pairs)):
@@ -159,8 +146,13 @@ def prepare_jacobian_probe(
         max_embedding_steps=max_embedding_steps,
     )
 
-    source_indices = _pairing_indices(pairs[:, 0], len(registered_sources), "source")
-    detector_indices = _pairing_indices(pairs[:, 1], len(registered_detectors), "detector")
+    normalized_pairings = normalize_channel_pairings(
+        pairs,
+        len(registered_sources),
+        len(registered_detectors),
+    )
+    source_indices = normalized_pairings[:, 0]
+    detector_indices = normalized_pairings[:, 1]
 
     if normalized_flag == "distance":
         distances = np.linalg.norm(
@@ -177,7 +169,7 @@ def prepare_jacobian_probe(
         "detnorms": detector_directions,
         "source_elements": source_elements,
         "detector_elements": detector_elements,
-        "channel_pairings": pairs,
+        "channel_pairings": normalized_pairings,
         "short_separation_indices": short_indices,
         "long_separation_indices": long_indices,
     }
@@ -193,5 +185,5 @@ def prepare_jacobian_probe(
             detector_indices,
         )
     if save_probe:
-        save_prepared_input(archive_path, probe)
+        save_npz_archive(archive_path, probe)
     return probe

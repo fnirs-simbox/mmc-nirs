@@ -6,10 +6,11 @@ from numpy.typing import ArrayLike
 from scipy.optimize import minimize
 
 from mmc_nirs.utils.mesh_utils import (
-    _as_coordinate_array,
-    _as_element_array,
     _find_containing_elements,
+    as_coordinate_array,
+    as_element_array,
     make_orientation_matrices,
+    make_surface_mesh,
 )
 
 
@@ -70,11 +71,11 @@ def register_probe(
         embedded within ``max_embedding_steps``.
     """
     # Validate and normalize coordinate and element arrays. Element indices are
-    # converted to zero-based indexing by _as_element_array when necessary.
-    sources = _as_coordinate_array(source_coordinates, "source_coordinates")
-    detectors = _as_coordinate_array(detector_coordinates, "detector_coordinates")
-    nodes = _as_coordinate_array(mesh_nodes, "mesh_nodes")
-    elements = _as_element_array(mesh_elements, nodes.shape[0])
+    # converted to zero-based indexing by as_element_array when necessary.
+    sources = as_coordinate_array(source_coordinates, "source_coordinates")
+    detectors = as_coordinate_array(detector_coordinates, "detector_coordinates")
+    nodes = as_coordinate_array(mesh_nodes, "mesh_nodes")
+    elements = as_element_array(mesh_elements, nodes.shape[0])
 
     # Convert the probe's declared length unit to the mesh's millimeter unit.
     unit_scales = {"mm": 1.0, "cm": 10.0, "m": 1_000.0}
@@ -185,7 +186,7 @@ def _minimize_surface_translation(
     RuntimeError
         If the translation optimization does not converge successfully.
     """
-    surface = _make_surface_mesh(nodes, elements)
+    surface = make_surface_mesh(nodes, elements)
 
     def mean_squared_surface_distance(translation: np.ndarray) -> float:
         """Return the mean squared distance from translated optodes to the mesh surface.
@@ -211,19 +212,6 @@ def _minimize_surface_translation(
     return coordinates + result.x
 
 
-def _make_surface_mesh(nodes: np.ndarray, elements: np.ndarray) -> trimesh.Trimesh:
-    """Construct the exterior triangular surface of a tetrahedral mesh."""
-    tetrahedron_faces = elements[:, [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]]].reshape(-1, 3)
-    _, unique_indices, face_counts = np.unique(
-        np.sort(tetrahedron_faces, axis=1),
-        axis=0,
-        return_index=True,
-        return_counts=True,
-    )
-    boundary_faces = tetrahedron_faces[unique_indices[face_counts == 1]]
-    return trimesh.Trimesh(vertices=nodes, faces=boundary_faces, process=False)
-
-
 def find_optode_directions(optode_coordinates: ArrayLike, mesh_nodes: ArrayLike) -> np.ndarray:
     """Compute inward unit directions from optodes toward the mesh center.
 
@@ -244,8 +232,8 @@ def find_optode_directions(optode_coordinates: ArrayLike, mesh_nodes: ArrayLike)
     ValueError
         If an optode lies exactly at the mesh center.
     """
-    optodes = _as_coordinate_array(optode_coordinates, "optode_coordinates")
-    nodes = _as_coordinate_array(mesh_nodes, "mesh_nodes")
+    optodes = as_coordinate_array(optode_coordinates, "optode_coordinates")
+    nodes = as_coordinate_array(mesh_nodes, "mesh_nodes")
     mesh_center = (nodes.min(axis=0) + nodes.max(axis=0)) / 2.0
     directions = mesh_center - optodes
     lengths = np.linalg.norm(directions, axis=1, keepdims=True)

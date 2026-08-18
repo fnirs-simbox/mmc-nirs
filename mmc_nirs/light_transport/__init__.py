@@ -1,5 +1,6 @@
 from mmc_nirs.utils.mesh_utils import make_orientation_matrices
 
+from .prepare_jacobian_inputs import JacobianInputs, prepare_jacobian_inputs
 from .prepare_jacobian_mesh import prepare_jacobian_mesh
 from .prepare_jacobian_probe import prepare_jacobian_probe
 from .register_probe import find_optode_directions, register_probe

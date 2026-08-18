@@ -117,6 +117,44 @@ def test_read_history_concatenates_compatible_blocks(tmp_path: Path) -> None:
     )
 
 
+def test_read_history_preserves_single_medium_vector_shape(tmp_path: Path) -> None:
+    savedetflag = (1 << 0) | (1 << 2)
+    history_path = tmp_path / "simulation.mch"
+    history_path.write_bytes(
+        _history_block(
+            np.array([[1.0, 2.0], [2.0, 3.0]]),
+            medium_count=1,
+            savedetflag=savedetflag,
+        )
+    )
+
+    detected_photons = read_history(history_path)
+
+    np.testing.assert_array_equal(detected_photons["detid"], [1.0, 2.0])
+    np.testing.assert_array_equal(detected_photons["ppath"], [[2.0], [3.0]])
+
+
+def test_read_history_accepts_mmc_default_layout_when_savedetflag_is_zero(tmp_path: Path) -> None:
+    # D, N, P, X, V, and W fields for one medium, as emitted by MMC 2.8.0.
+    records = np.array(
+        [
+            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 0.5],
+            [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 0.25],
+        ]
+    )
+    history_path = tmp_path / "simulation.mch"
+    history_path.write_bytes(_history_block(records, medium_count=1, savedetflag=0))
+
+    detected_photons = read_history(history_path)
+
+    np.testing.assert_array_equal(detected_photons["detid"], [1.0, 2.0])
+    np.testing.assert_array_equal(detected_photons["nscat"], [[2.0], [3.0]])
+    np.testing.assert_array_equal(detected_photons["ppath"], [[3.0], [4.0]])
+    np.testing.assert_array_equal(detected_photons["p"], [[4.0, 5.0, 6.0], [5.0, 6.0, 7.0]])
+    np.testing.assert_array_equal(detected_photons["v"], [[7.0, 8.0, 9.0], [8.0, 9.0, 10.0]])
+    np.testing.assert_array_equal(detected_photons["w0"], [0.5, 0.25])
+
+
 def test_read_history_rejects_missing_partial_paths(tmp_path: Path) -> None:
     history_path = tmp_path / "simulation.mch"
     history_path.write_bytes(

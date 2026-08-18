@@ -42,13 +42,13 @@ def load_light_transport_results(experiment_config: dict[str, Any], use_jacobian
     ------
     ValueError
         If Jacobian files use inconsistent channel indices or contain invalid
-        one-based indices.
+        zero-based indices.
     FileNotFoundError
         If the experiment directory or one of its configured data files does
         not exist.
     """
     file_paths = experiment_config["filepaths"]
-    configured_directory = file_paths["experiment_dir"]
+    configured_directory = experiment_config["experiment_dir"]
 
     with _experiment_directory(configured_directory) as experiment_directory:
         with np.load(experiment_directory / file_paths["meshfile"], allow_pickle=False) as mesh_archive:
@@ -69,17 +69,20 @@ def load_light_transport_results(experiment_config: dict[str, Any], use_jacobian
             for jacobian_file in file_paths.get("jacobians", []):
                 with np.load(experiment_directory / jacobian_file, allow_pickle=False) as jacobian_archive:
                     current_indices = np.asarray(jacobian_archive["channelidx"]).reshape(-1)
-                    if not np.issubdtype(current_indices.dtype, np.integer) or np.any(current_indices < 1):
-                        raise ValueError(f"{jacobian_file} contains invalid one-based channel indices")
-                    current_indices = current_indices.astype(np.intp, copy=False) - 1
+                    if not np.issubdtype(current_indices.dtype, np.integer) or np.any(current_indices < 0):
+                        raise ValueError(f"{jacobian_file} contains invalid zero-based channel indices")
+                    current_indices = current_indices.astype(np.intp, copy=False)
+
+                    jacobian = jacobian_archive["J"]
+                    measurements_zero = jacobian_archive["mea0"]
+                    if np.any(current_indices >= len(jacobian)) or np.any(current_indices >= len(measurements_zero)):
+                        raise ValueError(f"{jacobian_file} contains out-of-range zero-based channel indices")
 
                     if channel_indices is None:
                         channel_indices = current_indices
                     elif not np.array_equal(channel_indices, current_indices):
                         raise ValueError("All Jacobian files must use the same channel indices")
 
-                    jacobian = jacobian_archive["J"]
-                    measurements_zero = jacobian_archive["mea0"]
                     jacobian_list.append(jacobian[current_indices, :].copy())
                     measurements_zero_list.append(measurements_zero[current_indices].reshape(-1, 1).copy())
 

@@ -45,12 +45,27 @@ def _read_exact(file: BinaryIO, size: int, description: str) -> bytes:
 def _record_layout(
     medium_count: int,
     savedetflag: int,
+    record_count: int,
 ) -> list[tuple[str, int]]:
     """Return enabled detected-photon fields and their column widths."""
     if savedetflag & ~0xFF:
         raise ValueError(f"Unsupported MMC savedetflag bits: 0x{savedetflag & ~0xFF:x}")
 
-    return [(name, width_fn(medium_count)) for name, bit, width_fn in _FIELD_SPECS if savedetflag & (1 << bit)]
+    layout = [(name, width_fn(medium_count)) for name, bit, width_fn in _FIELD_SPECS if savedetflag & (1 << bit)]
+    if layout or record_count == 0:
+        return layout
+
+    # MMC 2.8.0 CLI output can leave savedetflag at zero while writing its
+    # default DNPXVW record. Accept that known layout only when the reported
+    # width matches exactly; other inconsistent zero-flag headers remain
+    # invalid.
+    default_field_names = {"detid", "nscat", "ppath", "p", "v", "w0"}
+    default_layout = [
+        (name, width_fn(medium_count)) for name, _bit, width_fn in _FIELD_SPECS if name in default_field_names
+    ]
+    if record_count == sum(width for _, width in default_layout):
+        return default_layout
+    return layout
 
 
 def read_flux(file_path: str | Path) -> np.ndarray:
@@ -146,7 +161,7 @@ def read_history(
             if version != 1:
                 raise ValueError(f"Unsupported MMC history version {version}; expected version 1")
 
-            layout = _record_layout(medium_count, savedetflag)
+            layout = _record_layout(medium_count, savedetflag, record_count)
             expected_columns = sum(width for _, width in layout)
             if record_count != expected_columns:
                 raise ValueError(
@@ -186,7 +201,7 @@ def read_history(
                 next_column = column + width
                 values = records[:, column:next_column].copy()
 
-                if width == 1:
+                if width == 1 and name in {"detid", "w0"}:
                     values = values[:, 0]
 
                 chunks.setdefault(name, []).append(values)

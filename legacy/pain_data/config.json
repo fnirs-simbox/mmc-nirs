@@ -11,14 +11,15 @@
         "optical_properties": "optical_properties.json"
     },
     "mmc_settings" : {
-    "nphoton" : 5e9,
-    "tstart" : 0,
-    "tend" : 5e-9,
-    "tstep" : 5e-9,
-    "method" : "elem",
-    "issaveexit" : 1,
-    "issavedet" : 1,
-    "outputtype" : "flux"
+        "nphoton" : 5e9
     },
+    "ordered_tissues": [
+        "ambient_air",
+        "white_matter",
+        "gray_matter",
+        "CSF",
+        "skull",
+        "scalp"
+    ],
     "wavelengths" : [690, 830]
 }
