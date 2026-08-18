@@ -3,12 +3,14 @@
 import numpy as np
 import trimesh
 from numpy.typing import ArrayLike
+from scipy.optimize import minimize
 
 from mmc_nirs.utils.mesh_utils import (
-    _as_coordinate_array,
-    _as_element_array,
     _find_containing_elements,
+    as_coordinate_array,
+    as_element_array,
     make_orientation_matrices,
+    make_surface_mesh,
 )
 
 
@@ -21,7 +23,6 @@ def register_probe(
     probe_units: str = "mm",
     embedding_step: float = 0.1,
     max_embedding_steps: int = 1_000,
-    plot: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Register fNIRS source and detector positions to a tetrahedral head mesh.
 
@@ -46,9 +47,6 @@ def register_probe(
         center during each embedding iteration.
     max_embedding_steps : int, default=1000
         Maximum number of embedding iterations before registration fails.
-    plot : bool, default=False
-        Whether to create a diagnostic 3D registration plot.
-
     Returns
     -------
     registered_sources : numpy.ndarray
@@ -69,42 +67,66 @@ def register_probe(
     ValueError
         If an input shape, orientation, unit, or embedding setting is invalid.
     RuntimeError
-        If one or more optodes cannot be embedded within ``max_embedding_steps``.
+        If translation optimization fails or one or more optodes cannot be
+        embedded within ``max_embedding_steps``.
     """
-    sources = _as_coordinate_array(source_coordinates, "source_coordinates")
-    detectors = _as_coordinate_array(detector_coordinates, "detector_coordinates")
-    nodes = _as_coordinate_array(mesh_nodes, "mesh_nodes")
-    elements = _as_element_array(mesh_elements, nodes.shape[0])
+    # Validate and normalize coordinate and element arrays. Element indices are
+    # converted to zero-based indexing by as_element_array when necessary.
+    sources = as_coordinate_array(source_coordinates, "source_coordinates")
+    detectors = as_coordinate_array(detector_coordinates, "detector_coordinates")
+    nodes = as_coordinate_array(mesh_nodes, "mesh_nodes")
+    elements = as_element_array(mesh_elements, nodes.shape[0])
+
+    # Convert the probe's declared length unit to the mesh's millimeter unit.
     unit_scales = {"mm": 1.0, "cm": 10.0, "m": 1_000.0}
     try:
         unit_scale = unit_scales[probe_units.lower()]
     except (AttributeError, KeyError) as error:
         raise ValueError("probe_units must be either 'mm', 'cm', or 'm'") from error
+
+    # Reject embedding settings that cannot move optodes toward the mesh.
     if embedding_step <= 0:
         raise ValueError("embedding_step must be positive")
     if max_embedding_steps < 0:
         raise ValueError("max_embedding_steps must be non-negative")
 
+    # Look up the matrix that maps the probe coordinate convention to RAS.
     orientation_matrices = make_orientation_matrices()
     try:
         orientation_matrix = orientation_matrices[probe_orientation.upper()]
     except KeyError as error:
         raise ValueError(f"Unknown probe orientation {probe_orientation!r}") from error
 
+    # Reorient the sources and detectors and express them in millimeters.
     sources_ras = unit_scale * sources @ orientation_matrix.T
     detectors_ras = unit_scale * detectors @ orientation_matrix.T
 
+    # Combine all optodes so registration applies exactly the same transform to
+    # sources and detectors, preserving their relative arrangement.
     optodes_ras = np.vstack((sources_ras, detectors_ras))
+
+    # Produce a stable initial placement: center the probe over the mesh in X
+    # and Y, then align the probe's highest Z coordinate with the mesh's top.
     mesh_center = (nodes.min(axis=0) + nodes.max(axis=0)) / 2.0
     probe_center = (optodes_ras.min(axis=0) + optodes_ras.max(axis=0)) / 2.0
-    roughly_aligned = optodes_ras + mesh_center - probe_center
+    alignment_offset = mesh_center - probe_center
+    alignment_offset[2] = nodes[:, 2].max() - optodes_ras[:, 2].max()
+    roughly_aligned = optodes_ras + alignment_offset
 
-    _, registered_optodes, _ = trimesh.registration.icp(roughly_aligned, nodes)
+    # Refine the rough placement using translation only, minimizing the mean
+    # squared distance between the optodes and the exterior mesh surface.
+    registered_optodes = _minimize_surface_translation(roughly_aligned, nodes, elements)
+
+    # Restore separate source and detector arrays after their shared registration.
     registered_sources = registered_optodes[: sources.shape[0]]
     registered_detectors = registered_optodes[sources.shape[0] :]
 
+    # Calculate fixed inward directions from each registered optode toward the
+    # center of the mesh; these directions drive the embedding step below.
     source_directions = find_optode_directions(registered_sources, nodes)
     detector_directions = find_optode_directions(registered_detectors, nodes)
+
+    # Move any exterior sources inward until each lies in a tetrahedron.
     registered_sources, source_elements = _embed_optodes(
         registered_sources,
         source_directions,
@@ -113,6 +135,8 @@ def register_probe(
         embedding_step,
         max_embedding_steps,
     )
+
+    # Perform the same embedding and containing-element lookup for detectors.
     registered_detectors, detector_elements = _embed_optodes(
         registered_detectors,
         detector_directions,
@@ -122,15 +146,8 @@ def register_probe(
         max_embedding_steps,
     )
 
-    if plot:
-        _plot_registration(
-            nodes,
-            registered_sources,
-            registered_detectors,
-            source_directions,
-            detector_directions,
-        )
-
+    # Return final coordinates, inward directions, and containing tetrahedra in
+    # separate source and detector arrays expected by downstream simulations.
     return (
         registered_sources,
         registered_detectors,
@@ -139,6 +156,60 @@ def register_probe(
         source_elements,
         detector_elements,
     )
+
+
+def _minimize_surface_translation(
+    coordinates: np.ndarray,
+    nodes: np.ndarray,
+    elements: np.ndarray,
+) -> np.ndarray:
+    """Translate optodes to minimize their squared distances to the mesh surface.
+
+    Parameters
+    ----------
+    coordinates : numpy.ndarray
+        Optode coordinates with shape ``(n_optodes, 3)``.
+    nodes : numpy.ndarray
+        Tetrahedral mesh-node coordinates with shape ``(n_nodes, 3)``.
+    elements : numpy.ndarray
+        Zero-based tetrahedral vertex indices with shape ``(n_elements, 4)``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Translated optode coordinates with shape ``(n_optodes, 3)``. A single
+        translation vector is applied to every optode, preserving their relative
+        positions and orientation.
+
+    Raises
+    ------
+    RuntimeError
+        If the translation optimization does not converge successfully.
+    """
+    surface = make_surface_mesh(nodes, elements)
+
+    def mean_squared_surface_distance(translation: np.ndarray) -> float:
+        """Return the mean squared distance from translated optodes to the mesh surface.
+
+        Parameters
+        ----------
+        translation : numpy.ndarray
+            Three-dimensional translation vector applied to every optode.
+
+        Returns
+        -------
+        float
+            Mean of the squared shortest distances from the translated optodes
+            to the triangular mesh surface.
+        """
+        translated_coordinates = coordinates + translation
+        _, distances, _ = trimesh.proximity.closest_point_naive(surface, translated_coordinates)
+        return float(np.mean(np.square(distances)))
+
+    result = minimize(mean_squared_surface_distance, np.zeros(3), method="Powell")
+    if not result.success:
+        raise RuntimeError(f"Failed to optimize probe translation: {result.message}")
+    return coordinates + result.x
 
 
 def find_optode_directions(optode_coordinates: ArrayLike, mesh_nodes: ArrayLike) -> np.ndarray:
@@ -161,8 +232,8 @@ def find_optode_directions(optode_coordinates: ArrayLike, mesh_nodes: ArrayLike)
     ValueError
         If an optode lies exactly at the mesh center.
     """
-    optodes = _as_coordinate_array(optode_coordinates, "optode_coordinates")
-    nodes = _as_coordinate_array(mesh_nodes, "mesh_nodes")
+    optodes = as_coordinate_array(optode_coordinates, "optode_coordinates")
+    nodes = as_coordinate_array(mesh_nodes, "mesh_nodes")
     mesh_center = (nodes.min(axis=0) + nodes.max(axis=0)) / 2.0
     directions = mesh_center - optodes
     lengths = np.linalg.norm(directions, axis=1, keepdims=True)
@@ -196,20 +267,3 @@ def _embed_optodes(
         number_exterior = int(np.count_nonzero(containing_elements < 0))
         raise RuntimeError(f"Failed to embed {number_exterior} optode(s) within {max_steps} steps")
     return embedded_coordinates, containing_elements
-
-
-def _plot_registration(
-    mesh_nodes: np.ndarray,
-    source_coordinates: np.ndarray,
-    detector_coordinates: np.ndarray,
-    source_directions: np.ndarray,
-    detector_directions: np.ndarray,
-) -> None:
-    import matplotlib.pyplot as plt
-
-    figure = plt.figure()
-    axes = figure.add_subplot(projection="3d")
-    axes.scatter(*mesh_nodes.T, s=0.5, alpha=0.1, color="peru")
-    axes.quiver(*source_coordinates.T, *source_directions.T, color="red", length=15)
-    axes.quiver(*detector_coordinates.T, *detector_directions.T, color="blue", length=15)
-    axes.view_init(elev=30, azim=45)

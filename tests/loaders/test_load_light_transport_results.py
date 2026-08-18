@@ -26,7 +26,7 @@ def experiment_config_path(tmp_path: Path) -> Path:
             experiment_directory / f"jacobian_{wavelength}.npz",
             J=np.zeros((100, 50)),
             mea0=np.zeros(100),
-            channelidx=np.arange(1, 13),
+            channelidx=np.arange(12),
         )
     np.save(experiment_directory / "activation_map.npy", np.zeros(50))
     config_path = experiment_directory / "config.json"
@@ -88,3 +88,19 @@ def test_load_light_transport_results_loads_external_experiment(tmp_path, experi
 
     assert data["nodes"].shape == (50, 3)
     assert len(data["jacobian_list"]) == 2
+
+
+@pytest.mark.parametrize("invalid_index", [-1, 100])
+def test_load_light_transport_results_rejects_invalid_zero_based_channel_indices(
+    experiment_config_path: Path,
+    invalid_index: int,
+) -> None:
+    np.savez(
+        experiment_config_path.parent / "jacobian_690.npz",
+        J=np.zeros((100, 50)),
+        mea0=np.zeros(100),
+        channelidx=np.array([invalid_index]),
+    )
+
+    with pytest.raises(ValueError, match="zero-based channel indices"):
+        load_light_transport_results(load_config(experiment_config_path))

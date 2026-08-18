@@ -1,11 +1,23 @@
 """Path resolution and archive I/O for prepared light-transport inputs."""
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from os import PathLike
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+
+def require_fields(
+    available_fields: Collection[str],
+    required_fields: Collection[str],
+    description: str,
+) -> None:
+    """Raise when a named collection omits one or more required fields."""
+    missing_fields = set(required_fields).difference(available_fields)
+    if missing_fields:
+        missing = ", ".join(sorted(missing_fields))
+        raise ValueError(f"{description} is missing required field(s): {missing}")
 
 
 def resolve_prepared_input_path(experiment_config: Mapping[str, Any], filename_key: str) -> Path:
@@ -14,9 +26,9 @@ def resolve_prepared_input_path(experiment_config: Mapping[str, Any], filename_k
     if not isinstance(filepaths, Mapping):
         raise ValueError("experiment_config must contain a 'filepaths' mapping")
 
-    experiment_dir = filepaths.get("experiment_dir")
+    experiment_dir = experiment_config.get("experiment_dir")
     if not isinstance(experiment_dir, (str, PathLike)):
-        raise ValueError("filepaths['experiment_dir'] must be a path")
+        raise ValueError("experiment_config['experiment_dir'] must be a path")
 
     filename = filepaths.get(filename_key)
     if not isinstance(filename, (str, PathLike)):
@@ -27,17 +39,14 @@ def resolve_prepared_input_path(experiment_config: Mapping[str, Any], filename_k
     return Path(experiment_dir).expanduser() / configured_filename
 
 
-def load_prepared_input(path: Path, required_keys: set[str]) -> dict[str, np.ndarray]:
-    """Load a prepared archive and require its canonical fields."""
+def load_npz_archive(path: Path, required_keys: set[str]) -> dict[str, np.ndarray]:
+    """Load an NPZ archive and require the specified fields."""
     with np.load(path, allow_pickle=False) as archive:
-        missing_keys = required_keys.difference(archive.files)
-        if missing_keys:
-            missing = ", ".join(sorted(missing_keys))
-            raise ValueError(f"Prepared archive {path} is missing required field(s): {missing}")
+        require_fields(archive.files, required_keys, f"NPZ archive {path}")
         return {key: archive[key].copy() for key in archive.files}
 
 
-def save_prepared_input(path: Path, prepared: Mapping[str, Any]) -> None:
-    """Create the configured output directory and save a prepared archive."""
+def save_npz_archive(path: Path, values: Mapping[str, Any]) -> None:
+    """Create the output directory and save values in an NPZ archive."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(path, **prepared)
+    np.savez(path, **values)

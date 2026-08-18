@@ -49,7 +49,7 @@ def load_default_config(experiment: str) -> dict[str, Any]:
         raise FileNotFoundError(f"No configuration found for experiment {experiment!r}")
 
     config = _read_config(config_path, f"for experiment {experiment!r}")
-    config["filepaths"]["experiment_dir"] = assets_directory
+    config["experiment_dir"] = assets_directory
     return config
 
 
@@ -85,7 +85,7 @@ def load_config(config_path: str | PathLike[str]) -> dict[str, Any]:
 
     path = path.resolve()
     config = _read_config(path, f"at {path}")
-    configured_directory = config["filepaths"].get("experiment_dir", "")
+    configured_directory = config.get("experiment_dir", "")
     if not isinstance(configured_directory, (str, PathLike)):
         raise ValueError("'experiment_dir' must be a path")
 
@@ -94,5 +94,5 @@ def load_config(config_path: str | PathLike[str]) -> dict[str, Any]:
         experiment_dir = path.parent / experiment_dir
     experiment_dir = experiment_dir.resolve()
 
-    config["filepaths"]["experiment_dir"] = experiment_dir
+    config["experiment_dir"] = experiment_dir
     return config

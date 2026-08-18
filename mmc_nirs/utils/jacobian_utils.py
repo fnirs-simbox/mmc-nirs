@@ -3,15 +3,195 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from numbers import Real
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from numpy.typing import ArrayLike, DTypeLike
 
+from .prepared_input_io import load_npz_archive, require_fields, save_npz_archive
+
+JACOBIAN_TSTEP_SECONDS = 5e-9
+MMC_SETTING_KEYS = {"nphoton"}
+
+JACOBIAN_RESULT_KEYS = {
+    "Green_d",
+    "Green_s",
+    "Green_sd",
+    "J",
+    "channelidx",
+    "mea0",
+    "sourcepos",
+    "detpos",
+    "detnorms",
+    "sourcedir",
+}
+
+
+def build_jacobian_mmc_config(
+    nodes: ArrayLike,
+    elements: ArrayLike,
+    element_tissue_values: ArrayLike,
+    optical_properties: ArrayLike,
+    photon_count: int,
+) -> dict[str, Any]:
+    """Build the fixed legacy MMC configuration from canonical inputs."""
+    return {
+        "nphoton": photon_count,
+        "node": np.asarray(nodes).tolist(),
+        "elem": (np.asarray(elements) + 1).tolist(),
+        "elemprop": np.asarray(element_tissue_values).tolist(),
+        "tstart": 0.0,
+        "tend": JACOBIAN_TSTEP_SECONDS,
+        "tstep": JACOBIAN_TSTEP_SECONDS,
+        "prop": np.asarray(optical_properties).tolist(),
+        "method": "elem",
+        "issaveexit": 1,
+        "issavedet": 1,
+        "outputtype": "flux",
+    }
+
+
+def validate_mmc_flux(flux: ArrayLike, node_count: int, description: str) -> np.ndarray:
+    """Return an MMC flux vector after validating its node dimension."""
+    flux_array = np.asarray(flux, dtype=float)
+    if flux_array.shape != (node_count,):
+        raise ValueError(f"{description} flux must contain one value per mesh node")
+    if not np.all(np.isfinite(flux_array)):
+        raise ValueError(f"{description} flux contains non-finite values")
+    return flux_array
+
+
+def resolve_jacobian_save_path(save_path: str | Path | None) -> Path:
+    """Validate and resolve the destination for a Jacobian archive."""
+    if save_path is None:
+        raise ValueError("save_path must be provided when save=True")
+    path = Path(save_path).expanduser()
+    if path.suffix.lower() != ".npz":
+        raise ValueError("save_path must name a .npz file")
+    if path.exists() and not path.is_file():
+        raise ValueError(f"save_path is not a file: {path}")
+    return path
+
+
+def load_jacobian_result(path: Path) -> dict[str, np.ndarray]:
+    """Load a cached Jacobian archive and require all legacy result fields."""
+    return load_npz_archive(path, JACOBIAN_RESULT_KEYS)
+
+
+def save_jacobian_result(path: Path, result: Mapping[str, Any]) -> None:
+    """Save a generated Jacobian result archive."""
+    save_npz_archive(path, result)
+
+
+def order_optical_properties(
+    optical_properties: Mapping[str, Mapping[str, ArrayLike]],
+    ordered_tissues: Sequence[str],
+) -> dict[str, list[list[float]]]:
+    """Arrange wavelength-specific optical properties in MMC medium order.
+
+    Parameters
+    ----------
+    optical_properties : mapping
+        Mapping loaded from ``optical_properties.json``. Each wavelength maps
+        tissue names to ``[mua, mus, g, n]`` values.
+    ordered_tissues : sequence of str
+        Tissue names in the medium order expected by the prepared mesh. The
+        background medium, normally ``"ambient_air"``, must be included.
+
+    Returns
+    -------
+    dict[str, list[list[float]]]
+        Optical-property rows ordered identically for every wavelength.
+
+    Raises
+    ------
+    TypeError
+        If either input does not have the expected mapping/sequence structure.
+    ValueError
+        If a tissue is missing, duplicated, or does not contain four finite
+        optical-property values.
+    """
+    if not isinstance(optical_properties, Mapping) or not optical_properties:
+        raise TypeError("optical_properties must be a non-empty mapping")
+    if isinstance(ordered_tissues, (str, bytes)) or not isinstance(ordered_tissues, Sequence):
+        raise TypeError("ordered_tissues must be a sequence of tissue names")
+
+    tissue_order = list(ordered_tissues)
+    if not tissue_order or not all(isinstance(tissue, str) and tissue for tissue in tissue_order):
+        raise ValueError("ordered_tissues must contain non-empty tissue names")
+    if len(set(tissue_order)) != len(tissue_order):
+        raise ValueError("ordered_tissues must not contain duplicate tissue names")
+
+    ordered_properties: dict[str, list[list[float]]] = {}
+    for wavelength, tissue_properties in optical_properties.items():
+        if not isinstance(wavelength, str) or not wavelength:
+            raise ValueError("optical property wavelength keys must be non-empty strings")
+        if not isinstance(tissue_properties, Mapping):
+            raise TypeError(f"optical properties for wavelength {wavelength!r} must be a mapping")
+
+        wavelength_properties: list[list[float]] = []
+        for tissue in tissue_order:
+            try:
+                values = np.asarray(tissue_properties[tissue], dtype=float)
+            except KeyError as error:
+                raise ValueError(
+                    f"optical properties for wavelength {wavelength!r} are missing tissue {tissue!r}"
+                ) from error
+            if values.shape != (4,) or not np.all(np.isfinite(values)):
+                raise ValueError(
+                    f"optical properties for wavelength {wavelength!r}, tissue {tissue!r} "
+                    "must contain four finite values"
+                )
+            wavelength_properties.append(values.tolist())
+
+        ordered_properties[wavelength] = wavelength_properties
+
+    return ordered_properties
+
+
+def select_optical_properties(
+    optical_properties: Mapping[str, Mapping[str, ArrayLike]],
+    ordered_tissues: Sequence[str],
+    wavelength: str | int,
+) -> np.ndarray:
+    """Return ordered MMC media for one validated wavelength."""
+    if isinstance(wavelength, bool) or not isinstance(wavelength, (str, int, np.integer)):
+        raise TypeError("wavelength must be a string or integer")
+    wavelength_key = str(wavelength)
+    if not wavelength_key:
+        raise ValueError("wavelength must not be empty")
+
+    properties_by_wavelength = order_optical_properties(optical_properties, ordered_tissues)
+    try:
+        return np.asarray(properties_by_wavelength[wavelength_key], dtype=float)
+    except KeyError as error:
+        available = ", ".join(properties_by_wavelength)
+        raise ValueError(f"No optical properties for wavelength {wavelength_key!r}; available: {available}") from error
+
+
+def validate_mmc_settings(mmc_settings: Mapping[str, Any]) -> int:
+    """Validate Jacobian MMC settings and return the integer photon count."""
+    if not isinstance(mmc_settings, Mapping):
+        raise TypeError("mmc_settings must be a mapping")
+    require_fields(mmc_settings, MMC_SETTING_KEYS, "mmc_settings")
+    unexpected_settings = set(mmc_settings).difference(MMC_SETTING_KEYS)
+    if unexpected_settings:
+        unexpected = ", ".join(sorted(unexpected_settings))
+        raise ValueError(f"mmc_settings contains unsupported field(s): {unexpected}")
+
+    value = mmc_settings["nphoton"]
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise TypeError("mmc_settings['nphoton'] must be a positive integer")
+    if not np.isfinite(value) or value <= 0 or not float(value).is_integer():
+        raise ValueError("mmc_settings['nphoton'] must be a positive integer")
+    return int(value)
+
 
 def _as_list(value: ArrayLike, dtype: DTypeLike | None = None) -> list[Any]:
+    """Convert an array-like value to a JSON-compatible nested list."""
     return np.asarray(value, dtype=dtype).tolist()
 
 
@@ -20,12 +200,10 @@ def _copy_config_value(
     source_key: str,
     target: dict[str, Any],
     target_key: str,
-    default: Any = None,
 ) -> None:
+    """Copy an optional configuration value under its serialized key."""
     if source_key in source:
         target[target_key] = source[source_key]
-    elif default is not None:
-        target[target_key] = default
 
 
 def save_mmc_mesh(
@@ -237,51 +415,3 @@ def mmc_to_json(
     with json_path.open("w", encoding="utf-8") as output_file:
         json.dump(mmc_session, output_file, **serialization_options)
     return None
-
-
-def read_cli_output(file_stub: str | Path) -> tuple[np.ndarray, dict[str, np.ndarray]]:
-    """Read fluence and detected-photon output from an MMC CLI run.
-
-    Parameters
-    ----------
-    file_stub : str or pathlib.Path
-        Common path without the ``.dat`` or ``.mch`` suffix.
-
-    Returns
-    -------
-    flux : numpy.ndarray
-        Flux values from the second column of the ``.dat`` file.
-    detected_photons : dict[str, numpy.ndarray]
-        Detector IDs, scattering counts, partial paths, exit positions, and exit
-        directions parsed from the ``.mch`` file.
-
-    Raises
-    ------
-    ValueError
-        If an output file does not contain the expected columns.
-    """
-    import pmmc
-
-    stub = Path(file_stub)
-    flux_data = np.loadtxt(stub.with_suffix(".dat"), ndmin=2)
-    if flux_data.shape[1] < 2:
-        raise ValueError("MMC flux output must contain at least two columns")
-
-    photon_data, metadata = pmmc.loadmch(str(stub.with_suffix(".mch")))
-    medium_count = int(metadata["medianum"])
-    expected_columns = 1 + 2 * medium_count + 6
-    if photon_data.ndim != 2 or photon_data.shape[1] < expected_columns:
-        raise ValueError(f"MMC photon output must contain at least {expected_columns} columns")
-
-    scattering_end = 1 + medium_count
-    path_end = scattering_end + medium_count
-    position_end = path_end + 3
-    direction_end = position_end + 3
-    detected_photons = {
-        "detector_id": photon_data[:, 0],
-        "scattering_counts": photon_data[:, 1:scattering_end],
-        "partial_paths": photon_data[:, scattering_end:path_end],
-        "exit_positions": photon_data[:, path_end:position_end],
-        "exit_directions": photon_data[:, position_end:direction_end],
-    }
-    return flux_data[:, 1], detected_photons

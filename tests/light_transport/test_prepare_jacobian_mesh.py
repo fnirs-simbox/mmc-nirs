@@ -7,10 +7,10 @@ from mmc_nirs.light_transport.prepare_jacobian_mesh import prepare_jacobian_mesh
 @pytest.fixture
 def experiment_config(tmp_path):
     return {
+        "experiment_dir": tmp_path / "prepared",
         "filepaths": {
-            "experiment_dir": tmp_path / "prepared",
             "meshfile": "mesh.npz",
-        }
+        },
     }
 
 
@@ -18,15 +18,15 @@ def test_prepare_jacobian_mesh_returns_normalized_mesh(experiment_config) -> Non
     prepared = prepare_jacobian_mesh(
         np.zeros((4, 3)),
         [[0, 1, 2, 3]],
-        [1, 2, 3, 4],
+        [1],
         orientation="RAS",
         units="mm",
         experiment_config=experiment_config,
     )
 
-    assert set(prepared) == {"nodes", "elements", "node_tissue_values"}
+    assert set(prepared) == {"nodes", "elements", "element_tissue_values"}
     np.testing.assert_array_equal(prepared["elements"], [[0, 1, 2, 3]])
-    np.testing.assert_array_equal(prepared["node_tissue_values"], [1, 2, 3, 4])
+    np.testing.assert_array_equal(prepared["element_tissue_values"], [1])
 
 
 def test_prepare_jacobian_mesh_reorients_and_remaps_tissues(experiment_config) -> None:
@@ -41,7 +41,7 @@ def test_prepare_jacobian_mesh_reorients_and_remaps_tissues(experiment_config) -
 
     mesh = prepare_jacobian_mesh(
         nodes,
-        [[1, 2, 3, 4]],
+        np.tile([[1, 2, 3, 4]], (4, 1)),
         [50, 40, 30, 20],
         orientation="LIA",
         units="m",
@@ -54,22 +54,22 @@ def test_prepare_jacobian_mesh_reorients_and_remaps_tissues(experiment_config) -
     )
 
     np.testing.assert_allclose(mesh["nodes"], nodes * 1000 @ np.array([[-1, 0, 0], [0, 0, 1], [0, -1, 0]]).T)
-    np.testing.assert_array_equal(mesh["elements"], [[0, 1, 2, 3]])
-    np.testing.assert_array_equal(mesh["node_tissue_values"], [1, 2, 3, 4])
+    np.testing.assert_array_equal(mesh["elements"], np.tile([[0, 1, 2, 3]], (4, 1)))
+    np.testing.assert_array_equal(mesh["element_tissue_values"], [1, 2, 3, 4])
 
 
 def test_prepare_jacobian_mesh_saves_to_configured_path(experiment_config) -> None:
     prepared = prepare_jacobian_mesh(
         np.zeros((4, 3)),
         [[0, 1, 2, 3]],
-        [1, 2, 3, 4],
+        [1],
         "RAS",
         "mm",
         experiment_config,
         save_mesh=True,
     )
 
-    output_path = experiment_config["filepaths"]["experiment_dir"] / "mesh.npz"
+    output_path = experiment_config["experiment_dir"] / "mesh.npz"
     assert output_path.is_file()
     with np.load(output_path, allow_pickle=False) as archive:
         for key, value in prepared.items():
@@ -77,12 +77,12 @@ def test_prepare_jacobian_mesh_saves_to_configured_path(experiment_config) -> No
 
 
 def test_prepare_jacobian_mesh_reuses_existing_archive_before_validation(experiment_config) -> None:
-    output_dir = experiment_config["filepaths"]["experiment_dir"]
+    output_dir = experiment_config["experiment_dir"]
     output_dir.mkdir()
     cached = {
         "nodes": np.ones((4, 3)),
         "elements": np.array([[0, 1, 2, 3]]),
-        "node_tissue_values": np.array([1, 2, 3, 4]),
+        "element_tissue_values": np.array([1]),
     }
     np.savez(output_dir / "mesh.npz", **cached)
 
@@ -93,19 +93,19 @@ def test_prepare_jacobian_mesh_reuses_existing_archive_before_validation(experim
 
 
 def test_prepare_jacobian_mesh_overwrites_existing_archive(experiment_config) -> None:
-    output_dir = experiment_config["filepaths"]["experiment_dir"]
+    output_dir = experiment_config["experiment_dir"]
     output_dir.mkdir()
     np.savez(
         output_dir / "mesh.npz",
         nodes=np.ones((4, 3)),
         elements=[[0, 1, 2, 3]],
-        node_tissue_values=[1, 2, 3, 4],
+        element_tissue_values=[1],
     )
 
     prepared = prepare_jacobian_mesh(
         np.zeros((4, 3)),
         [[0, 1, 2, 3]],
-        [1, 2, 3, 4],
+        [1],
         "RAS",
         "mm",
         experiment_config,
@@ -119,7 +119,7 @@ def test_prepare_jacobian_mesh_overwrites_existing_archive(experiment_config) ->
 
 
 def test_prepare_jacobian_mesh_rejects_incompatible_cache(experiment_config) -> None:
-    output_dir = experiment_config["filepaths"]["experiment_dir"]
+    output_dir = experiment_config["experiment_dir"]
     output_dir.mkdir()
     np.savez(output_dir / "mesh.npz", nodes=np.zeros((4, 3)))
 
@@ -139,7 +139,7 @@ def test_prepare_jacobian_mesh_rejects_non_npz_output_name(experiment_config) ->
     [
         ("nodes", [[0, 0]], "nodes"),
         ("elements", [[0, 1, 2]], "elements"),
-        ("node_tissue_values", [1, 2, 3], "node_tissue_values"),
+        ("element_tissue_values", [1, 2], "element_tissue_values"),
         ("orientation", "XYZ", "orientation"),
         ("units", "km", "units"),
     ],
@@ -148,7 +148,7 @@ def test_prepare_jacobian_mesh_rejects_invalid_input(experiment_config, field, v
     arguments = {
         "nodes": np.zeros((4, 3)),
         "elements": [[0, 1, 2, 3]],
-        "node_tissue_values": [1, 2, 3, 4],
+        "element_tissue_values": [1],
         "orientation": "RAS",
         "units": "mm",
         "experiment_config": experiment_config,
@@ -163,7 +163,7 @@ def test_prepare_jacobian_mesh_rejects_duplicate_or_unknown_tissue_labels(experi
     arguments = (
         np.zeros((4, 3)),
         [[0, 1, 2, 3]],
-        [1, 2, 3, 99],
+        [99],
         "RAS",
         "mm",
         experiment_config,
