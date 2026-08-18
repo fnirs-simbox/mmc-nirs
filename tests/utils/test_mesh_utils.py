@@ -5,9 +5,10 @@ from mmc_nirs.utils.mesh_utils import (
     _find_containing_elements,
     as_coordinate_array,
     as_element_array,
-    as_element_tissue_array,
+    as_element_tissue_id_array,
     find_closest_nodes,
     make_orientation_matrices,
+    ordered_tissue_arrays,
     validate_prepared_mesh,
     validate_tissue_property_coverage,
 )
@@ -45,12 +46,34 @@ def test_as_element_array_normalizes_one_based_indices() -> None:
     np.testing.assert_array_equal(elements, [[0, 1, 2, 3]])
 
 
-def test_as_element_tissue_array_requires_one_integer_label_per_element() -> None:
-    np.testing.assert_array_equal(as_element_tissue_array([1.0, 2.0], 2), [1, 2])
+def test_ordered_tissue_arrays_use_explicit_numeric_ids() -> None:
+    tissue_ids, tissue_names = ordered_tissue_arrays({"2": "skull", "0": "ambient_air", "1": "scalp"})
+
+    np.testing.assert_array_equal(tissue_ids, [0, 1, 2])
+    np.testing.assert_array_equal(tissue_names, ["ambient_air", "scalp", "skull"])
+    with pytest.raises(ValueError, match="duplicate tissue names"):
+        ordered_tissue_arrays({"0": "ambient_air", "1": "scalp", "2": "scalp"})
+
+
+@pytest.mark.parametrize(
+    "ordered_tissues",
+    [
+        {"0": "ambient_air", "2": "scalp"},
+        {"00": "ambient_air", "1": "scalp"},
+        {"background": "ambient_air", "1": "scalp"},
+    ],
+)
+def test_ordered_tissue_arrays_reject_invalid_ids(ordered_tissues) -> None:
+    with pytest.raises(ValueError, match="ordered_tissues"):
+        ordered_tissue_arrays(ordered_tissues)
+
+
+def test_as_element_tissue_id_array_requires_one_integer_id_per_element() -> None:
+    np.testing.assert_array_equal(as_element_tissue_id_array([1.0, 2.0], 2), [1, 2])
     with pytest.raises(ValueError, match="one value per element"):
-        as_element_tissue_array([1], 2)
-    with pytest.raises(ValueError, match="integer labels"):
-        as_element_tissue_array([1.5], 1)
+        as_element_tissue_id_array([1], 2)
+    with pytest.raises(ValueError, match="integer IDs"):
+        as_element_tissue_id_array([1.5], 1)
 
 
 def test_validate_prepared_mesh_returns_canonical_copies() -> None:
@@ -58,16 +81,20 @@ def test_validate_prepared_mesh_returns_canonical_copies() -> None:
         {
             "nodes": np.eye(3, 4).T,
             "elements": [[0, 1, 2, 3]],
-            "element_tissue_values": [1],
+            "element_tissue_ids": [1],
+            "ordered_tissue_ids": [1, 0],
+            "ordered_tissues": ["tissue", "ambient_air"],
         }
     )
 
     np.testing.assert_array_equal(prepared["elements"], [[0, 1, 2, 3]])
-    np.testing.assert_array_equal(prepared["element_tissue_values"], [1])
+    np.testing.assert_array_equal(prepared["element_tissue_ids"], [1])
+    np.testing.assert_array_equal(prepared["ordered_tissue_ids"], [0, 1])
+    np.testing.assert_array_equal(prepared["ordered_tissues"], ["ambient_air", "tissue"])
 
 
 def test_validate_tissue_property_coverage_rejects_missing_media() -> None:
-    validate_tissue_property_coverage([1, 2], 3)
+    validate_tissue_property_coverage([0, 1, 2], 3)
     with pytest.raises(ValueError, match="not represented"):
         validate_tissue_property_coverage([1, 3], 3)
 

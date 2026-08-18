@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -24,7 +24,7 @@ class JacobianInputs:
 
     nodes: np.ndarray
     elements: np.ndarray
-    element_tissue_values: np.ndarray
+    element_tissue_ids: np.ndarray
     source_positions: np.ndarray
     detector_positions: np.ndarray
     source_directions: np.ndarray
@@ -41,20 +41,21 @@ def prepare_jacobian_inputs(
     prepared_mesh: Mapping[str, ArrayLike],
     prepared_probe: Mapping[str, ArrayLike],
     optical_properties: Mapping[str, Mapping[str, ArrayLike]],
-    ordered_tissues: Sequence[str],
     mmc_settings: Mapping[str, Any],
     wavelength: str | int,
 ) -> JacobianInputs:
     """Return validated, canonical inputs for one Jacobian wavelength.
 
     Mesh and probe preparation and registration must already be complete. The
-    prepared mesh uses zero-based tetrahedra plus one tissue label per element;
-    prepared optode element indices are also zero-based.
+    prepared mesh uses zero-based tetrahedra plus one positional MMC medium ID
+    per element and carries the corresponding ordered tissue names. Prepared
+    optode element indices are also zero-based.
     """
     mesh = validate_prepared_mesh(prepared_mesh)
     probe = validate_prepared_probe(prepared_probe, len(mesh["elements"]))
-    selected_properties = select_optical_properties(optical_properties, ordered_tissues, wavelength)
-    validate_tissue_property_coverage(mesh["element_tissue_values"], len(selected_properties))
+    tissue_mapping = dict(zip(mesh["ordered_tissue_ids"].tolist(), mesh["ordered_tissues"].tolist(), strict=True))
+    selected_properties = select_optical_properties(optical_properties, tissue_mapping, wavelength)
+    validate_tissue_property_coverage(mesh["element_tissue_ids"], len(selected_properties))
     channel_indices = flatten_channel_pairings(
         probe["channel_pairings"],
         len(probe["sourcepos"]),
@@ -63,7 +64,7 @@ def prepare_jacobian_inputs(
     return JacobianInputs(
         nodes=mesh["nodes"],
         elements=mesh["elements"],
-        element_tissue_values=mesh["element_tissue_values"],
+        element_tissue_ids=mesh["element_tissue_ids"],
         source_positions=probe["sourcepos"],
         detector_positions=probe["detpos"],
         source_directions=probe["sourcedir"],

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from numbers import Real
 from pathlib import Path
 from typing import Any
@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import ArrayLike, DTypeLike
 
+from .mesh_utils import ordered_tissue_arrays
 from .prepared_input_io import load_npz_archive, require_fields, save_npz_archive
 
 JACOBIAN_TSTEP_SECONDS = 5e-9
@@ -33,7 +34,7 @@ JACOBIAN_RESULT_KEYS = {
 def build_jacobian_mmc_config(
     nodes: ArrayLike,
     elements: ArrayLike,
-    element_tissue_values: ArrayLike,
+    element_tissue_ids: ArrayLike,
     optical_properties: ArrayLike,
     photon_count: int,
 ) -> dict[str, Any]:
@@ -42,7 +43,7 @@ def build_jacobian_mmc_config(
         "nphoton": photon_count,
         "node": np.asarray(nodes).tolist(),
         "elem": (np.asarray(elements) + 1).tolist(),
-        "elemprop": np.asarray(element_tissue_values).tolist(),
+        "elemprop": np.asarray(element_tissue_ids).tolist(),
         "tstart": 0.0,
         "tend": JACOBIAN_TSTEP_SECONDS,
         "tstep": JACOBIAN_TSTEP_SECONDS,
@@ -88,7 +89,7 @@ def save_jacobian_result(path: Path, result: Mapping[str, Any]) -> None:
 
 def order_optical_properties(
     optical_properties: Mapping[str, Mapping[str, ArrayLike]],
-    ordered_tissues: Sequence[str],
+    ordered_tissues: Mapping[str | int, str],
 ) -> dict[str, list[list[float]]]:
     """Arrange wavelength-specific optical properties in MMC medium order.
 
@@ -97,9 +98,10 @@ def order_optical_properties(
     optical_properties : mapping
         Mapping loaded from ``optical_properties.json``. Each wavelength maps
         tissue names to ``[mua, mus, g, n]`` values.
-    ordered_tissues : sequence of str
-        Tissue names in the medium order expected by the prepared mesh. The
-        background medium, normally ``"ambient_air"``, must be included.
+    ordered_tissues : mapping
+        Mapping of contiguous MMC medium IDs to tissue names. JSON string keys
+        are parsed as integer IDs and the background medium at ID 0 must be
+        included.
 
     Returns
     -------
@@ -116,14 +118,8 @@ def order_optical_properties(
     """
     if not isinstance(optical_properties, Mapping) or not optical_properties:
         raise TypeError("optical_properties must be a non-empty mapping")
-    if isinstance(ordered_tissues, (str, bytes)) or not isinstance(ordered_tissues, Sequence):
-        raise TypeError("ordered_tissues must be a sequence of tissue names")
-
-    tissue_order = list(ordered_tissues)
-    if not tissue_order or not all(isinstance(tissue, str) and tissue for tissue in tissue_order):
-        raise ValueError("ordered_tissues must contain non-empty tissue names")
-    if len(set(tissue_order)) != len(tissue_order):
-        raise ValueError("ordered_tissues must not contain duplicate tissue names")
+    _, ordered_tissue_names = ordered_tissue_arrays(ordered_tissues)
+    tissue_order = ordered_tissue_names.tolist()
 
     ordered_properties: dict[str, list[list[float]]] = {}
     for wavelength, tissue_properties in optical_properties.items():
@@ -154,7 +150,7 @@ def order_optical_properties(
 
 def select_optical_properties(
     optical_properties: Mapping[str, Mapping[str, ArrayLike]],
-    ordered_tissues: Sequence[str],
+    ordered_tissues: Mapping[str | int, str],
     wavelength: str | int,
 ) -> np.ndarray:
     """Return ordered MMC media for one validated wavelength."""

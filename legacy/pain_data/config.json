@@ -1,25 +1,24 @@
 {
-    "description": "pain assessment task from forward model paper",
-    "name": "Pain",
-    "experiment_dir": "experiments/pain",
+    "description": "Pain assessment task from forward model paper.",
+    "name": "pain",
+    "experiment_dir": ".",
     "filepaths": {
-        "meshfile": "mesh.npz",
+        "meshfile": "mmcnirs_outputs/mesh.npz",
         "nodes_var": "nodes",
-        "jacobians": ["jacobian_690.npz", "jacobian_830.npz"],
-        "probefile": "probe.npz",
-        "activation_map": "activation_map.npz",
+        "jacobians": ["mmcnirs_outputs/jacobian_690.npz", "mmcnirs_outputs/jacobian_830.npz"],
+        "probefile": "mmcnirs_outputs/probe.npz",
         "optical_properties": "optical_properties.json"
     },
     "mmc_settings" : {
-        "nphoton" : 5e9
+        "nphoton" : 5e8
     },
-    "ordered_tissues": [
-        "ambient_air",
-        "white_matter",
-        "gray_matter",
-        "CSF",
-        "skull",
-        "scalp"
-    ],
+    "ordered_tissues": {
+        "0": "ambient_air",
+        "1": "white_matter",
+        "2": "gray_matter",
+        "3": "CSF",
+        "4": "skull",
+        "5": "scalp"
+    },
     "wavelengths" : [690, 830]
 }

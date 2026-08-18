@@ -16,6 +16,7 @@ prepare_jacobian_probe = probe_module.prepare_jacobian_probe
 def experiment_config(tmp_path):
     return {
         "experiment_dir": tmp_path / "prepared",
+        "ordered_tissues": {"0": "ambient_air", "1": "tissue"},
         "filepaths": {
             "meshfile": "mesh.npz",
             "nodes_var": "nodes",
@@ -29,7 +30,9 @@ def prepared_mesh():
     return {
         "nodes": np.array([[0, 0, 0], [20, 0, 0], [0, 20, 0], [0, 0, 20]], dtype=float),
         "elements": np.array([[0, 1, 2, 3]]),
-        "element_tissue_values": np.array([1]),
+        "element_tissue_ids": np.array([1]),
+        "ordered_tissue_ids": np.array([0, 1]),
+        "ordered_tissues": np.array(["ambient_air", "tissue"]),
     }
 
 
@@ -215,6 +218,8 @@ def test_saved_prepared_inputs_are_loadable_downstream(
     registration_result,
     fake_registration,
 ) -> None:
+    experiment_config["filepaths"]["meshfile"] = "mmcnirs_outputs/mesh.npz"
+    experiment_config["filepaths"]["probefile"] = "mmcnirs_outputs/probe.npz"
     mesh = prepare_jacobian_mesh(
         np.array([[0, 0, 0], [20, 0, 0], [0, 20, 0], [0, 0, 20]], dtype=float),
         [[0, 1, 2, 3]],
@@ -239,6 +244,8 @@ def test_saved_prepared_inputs_are_loadable_downstream(
 
     loaded = load_light_transport_results(experiment_config, use_jacobian=False)
 
+    assert (experiment_config["experiment_dir"] / "mmcnirs_outputs" / "mesh.npz").is_file()
+    assert (experiment_config["experiment_dir"] / "mmcnirs_outputs" / "probe.npz").is_file()
     np.testing.assert_array_equal(loaded["nodes"], mesh["nodes"])
     np.testing.assert_array_equal(loaded["source_positions"], registration_result[0])
     np.testing.assert_array_equal(loaded["detector_positions"], registration_result[1])

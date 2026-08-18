@@ -6,4 +6,5 @@ from .mesh_utils import (
     as_element_array,
     find_closest_nodes,
     make_orientation_matrices,
+    ordered_tissue_arrays,
 )
