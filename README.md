@@ -151,35 +151,16 @@ under the platform's managed user cache:
 
 Set `MMC_NIRS_CACHE_DIR` to override the runtime cache location.
 
-### Asset licenses and provenance
+### Licensing
 
-The [MIT license](LICENSE) in this repository covers the `mmc-nirs` software.
-It does **not** relicense the data or external runtime downloaded from Hugging
-Face. The Hugging Face repository is a distribution point for assets with
-different sources and license terms:
+The [MIT license](LICENSE) covers the `mmc-nirs` software, not the data or MMC
+runtime downloaded from Hugging Face. See
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for a concise license map.
 
-| Asset group | License and provenance summary |
-|---|---|
-| Default experiments | Mixed derived content: Colin27 terms, AAL3 GNU GPL status, CC0 probe sources, and project-generated configurations and simulation outputs. See each experiment's `README.md`. |
-| Colin27 standard head | Colin27-derived geometry plus an AAL3v1-derived segmentation. The exact GPL version for the source AAL3v1 archive used by the project is not established by that archive. See `standard-heads/colin27/README.md`. |
-| End-to-end inputs | `FingerTapping.snirf` and `probe.SD` originate from OpenNeuro `ds005776` version `1.0.1` under CC0 1.0. See `e2e-files/README.md` for the exact scope and citation. |
-| MMC runtime | The external MMC runtime is distributed under GNU GPL version 3 or later and includes its upstream `LICENSE.txt`. |
-
-Directory downloads require and retain their accompanying `README.md` so that
-source, attribution, citation, and redistribution information stays beside the
-files. Keep that README with any redistributed assets and follow the terms it
-records. Do not describe the complete Hugging Face dataset as MIT licensed.
-
-The detailed notices are available in the dataset:
-
-- [`experiments/pain/README.md`](https://huggingface.co/datasets/nielsbracher/fnirs-simbox-assets/blob/main/experiments/pain/README.md)
-- [`experiments/pattern_cutting/README.md`](https://huggingface.co/datasets/nielsbracher/fnirs-simbox-assets/blob/main/experiments/pattern_cutting/README.md)
-- [`standard-heads/colin27/README.md`](https://huggingface.co/datasets/nielsbracher/fnirs-simbox-assets/blob/main/standard-heads/colin27/README.md)
-- [`e2e-files/README.md`](https://huggingface.co/datasets/nielsbracher/fnirs-simbox-assets/blob/main/e2e-files/README.md)
-
-These summaries are provided for provenance and orientation, not as legal
-advice. Consult the accompanying notices and upstream licenses for the files
-you use or redistribute.
+Every downloaded data directory includes a detailed `README.md` covering its
+sources, attribution, citations, and redistribution terms. Keep that notice
+with redistributed assets; the complete Hugging Face dataset is not MIT
+licensed.
 
 ## Repository layout
 
