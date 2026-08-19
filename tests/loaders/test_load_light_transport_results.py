@@ -12,9 +12,11 @@ from mmc_nirs import load_config, load_light_transport_results
 def experiment_config_path(tmp_path: Path) -> Path:
     experiment_directory = tmp_path / "pain"
     experiment_directory.mkdir()
-    np.savez(experiment_directory / "mesh.npz", nodes=np.zeros((50, 3)))
+    output_directory = experiment_directory / "mmcnirs_outputs"
+    output_directory.mkdir()
+    np.savez(output_directory / "mesh.npz", nodes=np.zeros((50, 3)))
     np.savez(
-        experiment_directory / "probe.npz",
+        output_directory / "probe.npz",
         sourcepos=np.zeros((8, 3)),
         detpos=np.zeros((16, 3)),
         detnorms=np.zeros((16, 3)),
@@ -23,7 +25,7 @@ def experiment_config_path(tmp_path: Path) -> Path:
     )
     for wavelength in (690, 830):
         np.savez(
-            experiment_directory / f"jacobian_{wavelength}.npz",
+            output_directory / f"jacobian_{wavelength}.npz",
             J=np.zeros((100, 50)),
             mea0=np.zeros(100),
             channelidx=np.arange(12),
@@ -35,10 +37,13 @@ def experiment_config_path(tmp_path: Path) -> Path:
             {
                 "name": "Pain",
                 "filepaths": {
-                    "meshfile": "mesh.npz",
+                    "meshfile": "mmcnirs_outputs/mesh.npz",
                     "nodes_var": "nodes",
-                    "jacobians": ["jacobian_690.npz", "jacobian_830.npz"],
-                    "probefile": "probe.npz",
+                    "jacobians": [
+                        "mmcnirs_outputs/jacobian_690.npz",
+                        "mmcnirs_outputs/jacobian_830.npz",
+                    ],
+                    "probefile": "mmcnirs_outputs/probe.npz",
                     "activation_map": "activation_map.npy",
                 },
             }
@@ -96,7 +101,7 @@ def test_load_light_transport_results_rejects_invalid_zero_based_channel_indices
     invalid_index: int,
 ) -> None:
     np.savez(
-        experiment_config_path.parent / "jacobian_690.npz",
+        experiment_config_path.parent / "mmcnirs_outputs" / "jacobian_690.npz",
         J=np.zeros((100, 50)),
         mea0=np.zeros(100),
         channelidx=np.array([invalid_index]),

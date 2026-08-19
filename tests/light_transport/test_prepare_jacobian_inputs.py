@@ -9,7 +9,9 @@ def inputs():
     mesh = {
         "nodes": np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
         "elements": np.array([[0, 1, 2, 3]]),
-        "element_tissue_values": np.array([1]),
+        "element_tissue_ids": np.array([1]),
+        "ordered_tissue_ids": np.array([0, 1]),
+        "ordered_tissues": np.array(["ambient_air", "tissue"]),
     }
     probe = {
         "sourcepos": np.array([[0.1, 0.1, 0.1], [0.2, 0.1, 0.1]]),
@@ -36,13 +38,12 @@ def test_prepare_jacobian_inputs_normalizes_all_generator_inputs(inputs) -> None
         mesh,
         probe,
         properties,
-        ["ambient_air", "tissue"],
         {"nphoton": 5e9},
         690,
     )
 
     np.testing.assert_array_equal(prepared.elements, [[0, 1, 2, 3]])
-    np.testing.assert_array_equal(prepared.element_tissue_values, [1])
+    np.testing.assert_array_equal(prepared.element_tissue_ids, [1])
     np.testing.assert_array_equal(prepared.channel_indices, [0, 2, 3])
     np.testing.assert_array_equal(prepared.closest_detector_nodes, [0, 1])
     np.testing.assert_array_equal(
@@ -55,7 +56,7 @@ def test_prepare_jacobian_inputs_normalizes_all_generator_inputs(inputs) -> None
 @pytest.mark.parametrize(
     ("mesh_update", "probe_update", "message"),
     [
-        ({"element_tissue_values": np.array([2])}, {}, "not represented"),
+        ({"element_tissue_ids": np.array([2])}, {}, "not represented"),
         ({"elements": np.array([[1, 2, 3, 4]])}, {}, "out-of-range vertex"),
         ({}, {"source_elements": np.array([1, 0])}, "out-of-range element"),
         ({}, {"sourcedir": np.ones((1, 3))}, "must match sourcepos"),
@@ -81,7 +82,6 @@ def test_prepare_jacobian_inputs_rejects_incompatible_prepared_data(
             mesh | mesh_update,
             probe | probe_update,
             properties,
-            ["ambient_air", "tissue"],
             {"nphoton": 100},
             690,
         )
@@ -95,7 +95,6 @@ def test_prepare_jacobian_inputs_rejects_missing_wavelength(inputs) -> None:
             mesh,
             probe,
             properties,
-            ["ambient_air", "tissue"],
             {"nphoton": 100},
             850,
         )

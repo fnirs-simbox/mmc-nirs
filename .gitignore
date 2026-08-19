@@ -1,3 +1,6 @@
+# macOS metadata
+.DS_Store
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -211,6 +214,13 @@ tempCodeRunnerFile.py
 
 # Large experiment assets stored on Hugging Face
 /mmc_nirs/experiments/*/assets/
+
+# Downloaded and generated data for the pain end-to-end example
+/legacy/pain_data/colin27/
+/legacy/pain_data/mmcnirs_outputs/
+/legacy/pattern_cutting_data/mmcnirs_outputs/
+/workflow_example/colin27/
+/workflow_example/e2e-files/
 
 # PyPI configuration file
 .pypirc

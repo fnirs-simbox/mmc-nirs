@@ -16,6 +16,19 @@ prepare_jacobian_probe = probe_module.prepare_jacobian_probe
 def experiment_config(tmp_path):
     return {
         "experiment_dir": tmp_path / "prepared",
+        "mesh_settings": {
+            "ordered_tissues": {"0": "ambient_air", "1": "tissue"},
+            "mesh_orientation": "RAS",
+            "mesh_units": "mm",
+        },
+        "probe_settings": {
+            "probe_units": "cm",
+            "probe_orientation": "LIA",
+            "short_separation_flag": "distance",
+            "short_separation_arg": 15.0,
+            "embedding_step": 0.5,
+            "max_embedding_steps": 1_000,
+        },
         "filepaths": {
             "meshfile": "mesh.npz",
             "nodes_var": "nodes",
@@ -29,7 +42,9 @@ def prepared_mesh():
     return {
         "nodes": np.array([[0, 0, 0], [20, 0, 0], [0, 20, 0], [0, 0, 20]], dtype=float),
         "elements": np.array([[0, 1, 2, 3]]),
-        "element_tissue_values": np.array([1]),
+        "element_tissue_ids": np.array([1]),
+        "ordered_tissue_ids": np.array([0, 1]),
+        "ordered_tissues": np.array(["ambient_air", "tissue"]),
     }
 
 
@@ -71,11 +86,7 @@ def test_prepare_jacobian_probe_registers_with_prepared_mesh(
         sources,
         detectors,
         prepared_mesh,
-        "cm",
-        "LIA",
         pairings,
-        "distance",
-        15.0,
         experiment_config,
     )
 
@@ -103,14 +114,19 @@ def test_prepare_jacobian_probe_registers_with_prepared_mesh(
     args, kwargs = fake_registration[0]
     assert args[0] is sources
     assert args[1] is detectors
-    assert args[2] is prepared_mesh["nodes"]
-    assert args[3] is prepared_mesh["elements"]
+    np.testing.assert_array_equal(args[2], prepared_mesh["nodes"])
+    np.testing.assert_array_equal(args[3], prepared_mesh["elements"])
+    assert args[2] is not prepared_mesh["nodes"]
+    assert args[3] is not prepared_mesh["elements"]
     assert kwargs["probe_units"] == "cm"
     assert kwargs["probe_orientation"] == "LIA"
+    assert kwargs["embedding_step"] == 0.5
+    assert kwargs["max_embedding_steps"] == 1_000
 
 
 def test_prepare_jacobian_probe_reuses_existing_archive_before_registration(
     experiment_config,
+    prepared_mesh,
     monkeypatch,
 ) -> None:
     output_dir = experiment_config["experiment_dir"]
@@ -129,10 +145,42 @@ def test_prepare_jacobian_probe_reuses_existing_archive_before_registration(
     np.savez(output_dir / "probe.npz", **cached)
     monkeypatch.setattr(probe_module, "register_probe", lambda *args, **kwargs: pytest.fail("registration ran"))
 
-    probe = prepare_jacobian_probe([], [], {}, "invalid", "invalid", [], "invalid", object(), experiment_config)
+    probe = prepare_jacobian_probe([], [], prepared_mesh, [], experiment_config)
 
     for key, value in cached.items():
         np.testing.assert_array_equal(probe[key], value)
+
+
+def test_prepare_jacobian_probe_saves_diagnostic_beside_cached_probe(
+    experiment_config,
+    prepared_mesh,
+    monkeypatch,
+) -> None:
+    output_dir = experiment_config["experiment_dir"]
+    output_dir.mkdir()
+    cached = {
+        "sourcepos": np.ones((1, 3)),
+        "detpos": np.ones((1, 3)),
+        "sourcedir": np.ones((1, 3)),
+        "detnorms": np.ones((1, 3)),
+        "source_elements": np.array([0]),
+        "detector_elements": np.array([0]),
+        "channel_pairings": np.array([[0, 0]]),
+        "short_separation_indices": np.array([0]),
+        "long_separation_indices": np.array([], dtype=int),
+    }
+    np.savez(output_dir / "probe.npz", **cached)
+    saved_paths = []
+
+    class FakeFigure:
+        def savefig(self, path):
+            saved_paths.append(path)
+
+    monkeypatch.setattr(probe_module, "_plot_probe_registration", lambda *args: FakeFigure())
+
+    prepare_jacobian_probe([], [], prepared_mesh, [], experiment_config, plot=True)
+
+    assert saved_paths == [output_dir / "register_probe_diagnostic.png"]
 
 
 def test_prepare_jacobian_probe_overwrites_existing_archive(
@@ -146,15 +194,16 @@ def test_prepare_jacobian_probe_overwrites_existing_archive(
     cached = {key: np.zeros(1) for key in probe_module._PROBE_ARCHIVE_KEYS}
     np.savez(output_dir / "probe.npz", **cached)
 
+    experiment_config["probe_settings"].update(
+        probe_orientation="RAS",
+        short_separation_flag="index",
+        short_separation_arg=[0],
+    )
     probe = prepare_jacobian_probe(
         [[0, 0, 0], [1, 0, 0]],
         [[0.1, 0, 0], [3, 0, 0]],
         prepared_mesh,
-        "cm",
-        "RAS",
         [[1, 1], [2, 2]],
-        "index",
-        [0],
         experiment_config,
         save_probe=True,
         overwrite=True,
@@ -168,13 +217,23 @@ def test_prepare_jacobian_probe_overwrites_existing_archive(
         np.testing.assert_array_equal(archive["long_separation_indices"], [1])
 
 
-def test_prepare_jacobian_probe_rejects_incompatible_cache(experiment_config) -> None:
+def test_prepare_jacobian_probe_rejects_incompatible_cache(experiment_config, prepared_mesh) -> None:
     output_dir = experiment_config["experiment_dir"]
     output_dir.mkdir()
     np.savez(output_dir / "probe.npz", sourcepos=np.zeros((1, 3)))
 
     with pytest.raises(ValueError, match="missing required field"):
-        prepare_jacobian_probe([], [], {}, "mm", "RAS", [], "index", [], experiment_config)
+        prepare_jacobian_probe([], [], prepared_mesh, [], experiment_config)
+
+
+def test_prepare_jacobian_probe_validates_mesh_before_cache_reuse(experiment_config) -> None:
+    output_dir = experiment_config["experiment_dir"]
+    output_dir.mkdir()
+    cached = {key: np.zeros(1) for key in probe_module._PROBE_ARCHIVE_KEYS}
+    np.savez(output_dir / "probe.npz", **cached)
+
+    with pytest.raises(ValueError, match="prepared_mesh is missing required field"):
+        prepare_jacobian_probe([], [], {}, [], experiment_config)
 
 
 @pytest.mark.parametrize(
@@ -196,16 +255,14 @@ def test_prepare_jacobian_probe_rejects_invalid_channel_configuration(
     argument,
     message,
 ) -> None:
+    experiment_config["probe_settings"]["short_separation_flag"] = flag
+    experiment_config["probe_settings"]["short_separation_arg"] = argument
     with pytest.raises((TypeError, ValueError), match=message):
         prepare_jacobian_probe(
             [[0, 0, 0]],
             [[1, 0, 0]],
             prepared_mesh,
-            "mm",
-            "RAS",
             pairings,
-            flag,
-            argument,
             experiment_config,
         )
 
@@ -215,30 +272,33 @@ def test_saved_prepared_inputs_are_loadable_downstream(
     registration_result,
     fake_registration,
 ) -> None:
+    experiment_config["filepaths"]["meshfile"] = "mmcnirs_outputs/mesh.npz"
+    experiment_config["filepaths"]["probefile"] = "mmcnirs_outputs/probe.npz"
     mesh = prepare_jacobian_mesh(
         np.array([[0, 0, 0], [20, 0, 0], [0, 20, 0], [0, 0, 20]], dtype=float),
         [[0, 1, 2, 3]],
         [1],
-        "RAS",
-        "mm",
         experiment_config,
         save_mesh=True,
+    )
+    experiment_config["probe_settings"].update(
+        probe_orientation="RAS",
+        short_separation_flag="index",
+        short_separation_arg=[0],
     )
     prepare_jacobian_probe(
         [[0, 0, 0], [1, 0, 0]],
         [[0.1, 0, 0], [3, 0, 0]],
         mesh,
-        "cm",
-        "RAS",
         [[1, 1], [2, 2]],
-        "index",
-        [0],
         experiment_config,
         save_probe=True,
     )
 
     loaded = load_light_transport_results(experiment_config, use_jacobian=False)
 
+    assert (experiment_config["experiment_dir"] / "mmcnirs_outputs" / "mesh.npz").is_file()
+    assert (experiment_config["experiment_dir"] / "mmcnirs_outputs" / "probe.npz").is_file()
     np.testing.assert_array_equal(loaded["nodes"], mesh["nodes"])
     np.testing.assert_array_equal(loaded["source_positions"], registration_result[0])
     np.testing.assert_array_equal(loaded["detector_positions"], registration_result[1])
@@ -271,3 +331,47 @@ def test_signed_surface_distances_are_negative_inside_and_positive_outside() -> 
 
     assert distances[0] < 0
     assert distances[1] > 0
+
+
+def test_prepare_jacobian_probe_requires_complete_settings_before_cache_reuse(experiment_config) -> None:
+    output_dir = experiment_config["experiment_dir"]
+    output_dir.mkdir()
+    np.savez(output_dir / "probe.npz", **{key: np.zeros(1) for key in probe_module._PROBE_ARCHIVE_KEYS})
+    del experiment_config["probe_settings"]["probe_units"]
+    del experiment_config["probe_settings"]["embedding_step"]
+
+    with pytest.raises(ValueError) as error:
+        prepare_jacobian_probe([], [], {}, [], experiment_config)
+
+    message = str(error.value)
+    assert (
+        "required keys: embedding_step, max_embedding_steps, probe_orientation, probe_units, "
+        "short_separation_arg, short_separation_flag" in message
+    )
+    assert "missing keys: embedding_step, probe_units" in message
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("probe_units", "km", "probe_units"),
+        ("probe_orientation", "XYZ", "probe orientation"),
+        ("embedding_step", 0, "embedding_step"),
+        ("embedding_step", np.inf, "embedding_step"),
+        ("max_embedding_steps", -1, "max_embedding_steps"),
+        ("max_embedding_steps", 1.5, "max_embedding_steps"),
+    ],
+)
+def test_prepare_jacobian_probe_validates_settings_before_cache_reuse(
+    experiment_config,
+    field,
+    value,
+    message,
+) -> None:
+    output_dir = experiment_config["experiment_dir"]
+    output_dir.mkdir()
+    np.savez(output_dir / "probe.npz", **{key: np.zeros(1) for key in probe_module._PROBE_ARCHIVE_KEYS})
+    experiment_config["probe_settings"][field] = value
+
+    with pytest.raises(ValueError, match=message):
+        prepare_jacobian_probe([], [], {}, [], experiment_config)

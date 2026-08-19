@@ -2,15 +2,86 @@
 
 import itertools
 from collections.abc import Mapping
-from typing import Literal
+from numbers import Integral
+from typing import Any, Literal
 
 import numpy as np
 import trimesh
 from numpy.typing import ArrayLike
 
-from .prepared_input_io import require_fields
+from .prepared_input_io import require_config_section, require_fields
 
-PREPARED_MESH_KEYS = {"nodes", "elements", "element_tissue_values"}
+PREPARED_MESH_KEYS = {
+    "nodes",
+    "elements",
+    "element_tissue_ids",
+    "ordered_tissue_ids",
+    "ordered_tissues",
+}
+_MESH_SETTINGS_KEYS = {
+    "ordered_tissues",
+    "mesh_orientation",
+    "mesh_units",
+}
+
+
+def ordered_tissue_arrays(ordered_tissues: Mapping[str | int, str]) -> tuple[np.ndarray, np.ndarray]:
+    """Return MMC tissue IDs and names sorted by validated numeric ID."""
+    if not isinstance(ordered_tissues, Mapping):
+        raise TypeError("ordered_tissues must be a mapping from tissue IDs to tissue names")
+    if not ordered_tissues:
+        raise ValueError("ordered_tissues must not be empty")
+
+    tissues_by_id: dict[int, str] = {}
+    for configured_id, tissue_name in ordered_tissues.items():
+        if isinstance(configured_id, bool):
+            raise ValueError("ordered_tissues keys must be canonical non-negative integer strings")
+        if isinstance(configured_id, Integral):
+            tissue_id = int(configured_id)
+        elif isinstance(configured_id, str) and configured_id.isdecimal():
+            tissue_id = int(configured_id)
+            if configured_id != str(tissue_id):
+                raise ValueError("ordered_tissues keys must be canonical non-negative integer strings")
+        else:
+            raise ValueError("ordered_tissues keys must be canonical non-negative integer strings")
+        if tissue_id < 0:
+            raise ValueError("ordered_tissues keys must be non-negative")
+        if tissue_id in tissues_by_id:
+            raise ValueError(f"ordered_tissues contains duplicate tissue ID {tissue_id}")
+        if not isinstance(tissue_name, str) or not tissue_name:
+            raise ValueError("ordered_tissues must contain non-empty tissue names")
+        tissues_by_id[tissue_id] = tissue_name
+
+    expected_ids = set(range(len(tissues_by_id)))
+    if set(tissues_by_id) != expected_ids:
+        raise ValueError("ordered_tissues IDs must be contiguous from 0 to num_tissues - 1")
+    tissue_names = [tissues_by_id[tissue_id] for tissue_id in range(len(tissues_by_id))]
+    if len(set(tissue_names)) != len(tissue_names):
+        raise ValueError("ordered_tissues must not contain duplicate tissue names")
+    return np.arange(len(tissue_names), dtype=np.intp), np.asarray(tissue_names, dtype=np.str_)
+
+
+def _ordered_tissue_mapping_from_arrays(
+    ordered_tissue_ids: ArrayLike,
+    ordered_tissues: ArrayLike,
+) -> dict[int, str]:
+    """Reconstruct an ID-to-name mapping from prepared-mesh arrays."""
+    tissue_ids = np.asarray(ordered_tissue_ids)
+    if tissue_ids.ndim != 1 or tissue_ids.size == 0:
+        raise ValueError("prepared_mesh['ordered_tissue_ids'] must be a non-empty one-dimensional array")
+    if not np.issubdtype(tissue_ids.dtype, np.integer):
+        if not np.all(np.isfinite(tissue_ids)) or not np.all(tissue_ids == np.floor(tissue_ids)):
+            raise ValueError("prepared_mesh['ordered_tissue_ids'] must contain integer IDs")
+    tissue_ids = tissue_ids.astype(np.intp, copy=False)
+    if len(np.unique(tissue_ids)) != len(tissue_ids):
+        raise ValueError("prepared_mesh['ordered_tissue_ids'] must not contain duplicate IDs")
+
+    if isinstance(ordered_tissues, (str, bytes)):
+        raise ValueError("prepared_mesh['ordered_tissues'] must be a one-dimensional array")
+    tissue_names = list(ordered_tissues)
+    if len(tissue_names) != len(tissue_ids):
+        raise ValueError("prepared_mesh ordered tissue IDs and names must have equal lengths")
+    return dict(zip(tissue_ids.tolist(), tissue_names, strict=True))
 
 
 def as_coordinate_array(values: ArrayLike, name: str) -> np.ndarray:
@@ -55,18 +126,18 @@ def as_element_array(
     return elements
 
 
-def as_element_tissue_array(
+def as_element_tissue_id_array(
     values: ArrayLike,
     number_of_elements: int,
-    name: str = "element_tissue_values",
+    name: str = "element_tissue_ids",
 ) -> np.ndarray:
-    """Return one validated integer tissue label per mesh element."""
+    """Return one validated integer MMC medium ID per mesh element."""
     tissues = np.asarray(values)
     if tissues.shape != (number_of_elements,):
         raise ValueError(f"{name} must contain one value per element")
     if not np.issubdtype(tissues.dtype, np.integer):
         if not np.all(np.isfinite(tissues)) or not np.all(tissues == np.floor(tissues)):
-            raise ValueError(f"{name} must contain integer labels")
+            raise ValueError(f"{name} must contain integer IDs")
     return tissues.astype(np.intp, copy=True)
 
 
@@ -84,28 +155,39 @@ def validate_prepared_mesh(prepared_mesh: Mapping[str, ArrayLike]) -> dict[str, 
         allow_extra_columns=False,
         index_base="zero",
     )
-    tissue_values = as_element_tissue_array(
-        prepared_mesh["element_tissue_values"],
+    tissue_ids = as_element_tissue_id_array(
+        prepared_mesh["element_tissue_ids"],
         len(elements),
-        "prepared_mesh['element_tissue_values']",
+        "prepared_mesh['element_tissue_ids']",
     )
+    tissue_mapping = _ordered_tissue_mapping_from_arrays(
+        prepared_mesh["ordered_tissue_ids"],
+        prepared_mesh["ordered_tissues"],
+    )
+    ordered_tissue_ids, ordered_tissues = ordered_tissue_arrays(tissue_mapping)
+    unknown_ids = np.setdiff1d(np.unique(tissue_ids), ordered_tissue_ids)
+    if unknown_ids.size:
+        raise ValueError(
+            "prepared_mesh['element_tissue_ids'] contains IDs not represented by ordered_tissues: "
+            f"{unknown_ids.tolist()}"
+        )
     return {
         "nodes": nodes,
         "elements": elements,
-        "element_tissue_values": tissue_values,
+        "element_tissue_ids": tissue_ids,
+        "ordered_tissue_ids": ordered_tissue_ids,
+        "ordered_tissues": ordered_tissues,
     }
 
 
 def validate_tissue_property_coverage(
-    element_tissue_values: ArrayLike,
+    element_tissue_ids: ArrayLike,
     number_of_media: int,
 ) -> None:
-    """Require every element label to reference a non-background MMC medium."""
-    tissue_values = np.asarray(element_tissue_values)
-    if tissue_values.size == 0 or tissue_values.min() < 1 or tissue_values.max() >= number_of_media:
-        raise ValueError(
-            "prepared_mesh['element_tissue_values'] contains labels not represented by the optical properties"
-        )
+    """Require every element ID to reference an available MMC medium."""
+    tissue_ids = np.asarray(element_tissue_ids)
+    if tissue_ids.size == 0 or tissue_ids.min() < 0 or tissue_ids.max() >= number_of_media:
+        raise ValueError("prepared_mesh['element_tissue_ids'] contains IDs not represented by the optical properties")
 
 
 def make_orientation_matrices() -> dict[str, np.ndarray]:
@@ -126,6 +208,36 @@ def make_orientation_matrices() -> dict[str, np.ndarray]:
             code = "".join(axis_letters[axis][sign] for axis, sign in zip(axis_order, signs, strict=True))
             matrices[code] = np.column_stack([axis_vectors[letter] for letter in code])
     return matrices
+
+
+def validate_mesh_settings(experiment_config: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate mesh configuration and return canonical preparation values."""
+    mesh_settings = require_config_section(experiment_config, "mesh_settings", _MESH_SETTINGS_KEYS)
+    ordered_tissue_ids, ordered_tissues = ordered_tissue_arrays(mesh_settings["ordered_tissues"])
+
+    units = mesh_settings["mesh_units"]
+    try:
+        normalized_units = units.lower()
+    except AttributeError as error:
+        raise ValueError("mesh_units must be either 'mm', 'cm' or 'm'") from error
+    unit_scales = {"mm": 1.0, "cm": 10.0, "m": 1_000.0}
+    try:
+        unit_scale = unit_scales[normalized_units]
+    except KeyError as error:
+        raise ValueError("mesh_units must be either 'mm', 'cm' or 'm'") from error
+
+    orientation = mesh_settings["mesh_orientation"]
+    try:
+        orientation_matrix = make_orientation_matrices()[orientation.upper()]
+    except (AttributeError, KeyError) as error:
+        raise ValueError(f"Unknown mesh orientation {orientation!r}") from error
+
+    return {
+        "ordered_tissue_ids": ordered_tissue_ids,
+        "ordered_tissues": ordered_tissues,
+        "unit_scale": unit_scale,
+        "orientation_matrix": orientation_matrix,
+    }
 
 
 def _find_containing_elements(

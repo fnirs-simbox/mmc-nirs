@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from numbers import Real
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -84,7 +84,6 @@ def generate_jacobian(
     prepared_mesh: Mapping[str, ArrayLike],
     prepared_probe: Mapping[str, ArrayLike],
     optical_properties: Mapping[str, Mapping[str, ArrayLike]],
-    ordered_tissues: Sequence[str],
     mmc_settings: Mapping[str, Any],
     wavelength: str | int,
     save_path: str | Path | None,
@@ -101,9 +100,10 @@ def generate_jacobian(
     is true.
 
     ``prepared_mesh`` must contain canonical ``nodes``, zero-based ``elements``,
-    and ``element_tissue_values`` arrays. ``prepared_probe`` must contain the
-    registered positions, directions, zero-based containing-element indices,
-    and channel pairings produced by :func:`prepare_jacobian_probe`.
+    positional ``element_tissue_ids``, and parallel ``ordered_tissue_ids`` and
+    ``ordered_tissues`` arrays. ``prepared_probe`` must contain the registered
+    positions, directions, zero-based containing-element indices, and channel
+    pairings produced by :func:`prepare_jacobian_probe`.
     """
     if not isinstance(save, bool):
         raise TypeError("save must be a boolean")
@@ -120,14 +120,13 @@ def generate_jacobian(
         prepared_mesh,
         prepared_probe,
         optical_properties,
-        ordered_tissues,
         mmc_settings,
         wavelength,
     )
     base_config = build_jacobian_mmc_config(
         inputs.nodes,
         inputs.elements,
-        inputs.element_tissue_values,
+        inputs.element_tissue_ids,
         inputs.selected_properties,
         inputs.photon_count,
     )

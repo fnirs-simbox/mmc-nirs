@@ -23,7 +23,7 @@ def test_order_optical_properties_uses_configured_tissue_order() -> None:
         }
     }
 
-    ordered = order_optical_properties(properties, ["ambient_air", "brain", "scalp"])
+    ordered = order_optical_properties(properties, {"2": "scalp", "0": "ambient_air", "1": "brain"})
 
     assert ordered == {
         "690": [
@@ -38,14 +38,14 @@ def test_order_optical_properties_rejects_missing_tissue() -> None:
     with pytest.raises(ValueError, match="missing tissue 'brain'"):
         order_optical_properties(
             {"690": {"ambient_air": [0.0, 0.0, 1.0, 1.0]}},
-            ["ambient_air", "brain"],
+            {"0": "ambient_air", "1": "brain"},
         )
 
 
 def test_select_optical_properties_returns_one_ordered_wavelength() -> None:
     selected = select_optical_properties(
         {"690": {"air": [0.0, 0.0, 1.0, 1.0], "tissue": [0.1, 1.0, 0.9, 1.4]}},
-        ["air", "tissue"],
+        {"1": "tissue", "0": "air"},
         690,
     )
 

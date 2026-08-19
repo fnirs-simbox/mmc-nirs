@@ -6,8 +6,33 @@ from mmc_nirs.utils.probe_utils import (
     as_unit_direction_array,
     flatten_channel_pairings,
     normalize_channel_pairings,
+    validate_probe_settings,
     validate_prepared_probe,
 )
+
+
+def test_validate_probe_settings_returns_canonical_registration_values() -> None:
+    settings = validate_probe_settings(
+        {
+            "probe_settings": {
+                "probe_units": "CM",
+                "probe_orientation": "lia",
+                "short_separation_flag": "DISTANCE",
+                "short_separation_arg": 15.0,
+                "embedding_step": 0.5,
+                "max_embedding_steps": 1_000,
+            }
+        }
+    )
+
+    assert settings == {
+        "probe_units": "cm",
+        "probe_orientation": "LIA",
+        "short_separation_flag": "distance",
+        "short_separation_arg": 15.0,
+        "embedding_step": 0.5,
+        "max_embedding_steps": 1_000,
+    }
 
 
 def test_normalize_channel_pairings_returns_zero_based_indices() -> None:

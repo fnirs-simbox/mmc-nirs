@@ -35,7 +35,9 @@ def prepared_mesh() -> dict[str, np.ndarray]:
             ]
         ),
         "elements": np.array([[0, 1, 2, 3]]),
-        "element_tissue_values": np.array([1]),
+        "element_tissue_ids": np.array([1]),
+        "ordered_tissue_ids": np.array([0, 1]),
+        "ordered_tissues": np.array(["ambient_air", "tissue"]),
     }
 
 
@@ -138,7 +140,6 @@ def test_generate_jacobian_runs_mmc_and_preserves_legacy_calculations(
         prepared_mesh,
         prepared_probe,
         optical_properties,
-        ["ambient_air", "tissue"],
         {"nphoton": 100},
         690,
         save_path,
@@ -199,7 +200,7 @@ def test_generate_jacobian_reuses_an_existing_saved_result(tmp_path: Path, monke
     np.savez(save_path, **cached)
     monkeypatch.setattr(jacobian_module, "run_mmc", lambda *args, **kwargs: pytest.fail("MMC ran"))
 
-    result = generate_jacobian({}, {}, {}, [], {}, 690, save_path)
+    result = generate_jacobian({}, {}, {}, {}, 690, save_path)
 
     for key, value in cached.items():
         np.testing.assert_array_equal(result[key], value)
@@ -210,7 +211,7 @@ def test_generate_jacobian_rejects_an_incompatible_saved_result(tmp_path: Path) 
     np.savez(save_path, J=np.ones((1, 1)))
 
     with pytest.raises(ValueError, match="missing required field"):
-        generate_jacobian({}, {}, {}, [], {}, 690, save_path)
+        generate_jacobian({}, {}, {}, {}, 690, save_path)
 
 
 def test_generate_jacobian_overwrites_an_existing_result(
@@ -229,7 +230,6 @@ def test_generate_jacobian_overwrites_an_existing_result(
         prepared_mesh,
         prepared_probe,
         optical_properties,
-        ["ambient_air", "tissue"],
         {"nphoton": 100},
         690,
         save_path,
@@ -254,7 +254,6 @@ def test_generate_jacobian_can_skip_saving(
         prepared_mesh,
         prepared_probe,
         optical_properties,
-        ["ambient_air", "tissue"],
         {"nphoton": 100},
         690,
         None,
@@ -279,7 +278,6 @@ def test_generate_jacobian_rejects_zero_source_detector_normalization(
             prepared_mesh,
             prepared_probe,
             optical_properties,
-            ["ambient_air", "tissue"],
             {"nphoton": 100},
             690,
             tmp_path / "jacobian.npz",
@@ -309,7 +307,6 @@ def test_generate_jacobian_rejects_invalid_mmc_settings(
             prepared_mesh,
             prepared_probe,
             optical_properties,
-            ["ambient_air", "tissue"],
             mmc_settings,
             690,
             tmp_path / "jacobian.npz",
@@ -330,7 +327,6 @@ def test_generate_jacobian_requires_mmc_outputs(
             prepared_mesh,
             prepared_probe,
             optical_properties,
-            ["ambient_air", "tissue"],
             {"nphoton": 100},
             690,
             tmp_path / "jacobian.npz",

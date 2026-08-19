@@ -1,0 +1,36 @@
+{
+    "description": "Pattern cutting surgical task from forward model paper.",
+    "name": "pattern_cutting",
+    "experiment_dir": ".",
+    "filepaths": {
+        "meshfile": "mmcnirs_outputs/mesh.npz",
+        "nodes_var": "nodes",
+        "jacobians": ["mmcnirs_outputs/jacobian_760.npz", "mmcnirs_outputs/jacobian_850.npz"],
+        "probefile": "mmcnirs_outputs/probe.npz",
+        "optical_properties": "optical_properties.json"
+    },
+    "mmc_settings" : {
+        "nphoton" : 5e8
+    },
+    "wavelengths" : [760, 850],
+    "mesh_settings" : {
+        "ordered_tissues": {
+            "0": "ambient_air",
+            "1": "white_matter",
+            "2": "gray_matter",
+            "3": "CSF",
+            "4": "skull",
+            "5": "scalp"
+        },
+        "mesh_orientation" : "RAS",
+        "mesh_units" : "mm"
+    },
+    "probe_settings" : {
+        "probe_orientation" : "RAS",
+        "probe_units" : "mm",
+        "embedding_step" : 0.5,
+        "short_separation_flag": "distance",
+        "short_separation_arg": 20.0,
+        "max_embedding_steps" : 1000
+     }
+}
