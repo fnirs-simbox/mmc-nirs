@@ -1,6 +1,7 @@
 """Prepare fNIRS probes for Jacobian generation."""
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -26,6 +27,29 @@ _PROBE_ARCHIVE_KEYS = PREPARED_PROBE_KEYS | {
     "short_separation_indices",
     "long_separation_indices",
 }
+_PROBE_DIAGNOSTIC_FILENAME = "register_probe_diagnostic.png"
+
+
+def _save_probe_registration_diagnostic(
+    mesh: Mapping[str, ArrayLike],
+    probe: Mapping[str, ArrayLike],
+    archive_path: Path,
+) -> None:
+    """Save the probe-registration figure beside the configured probe archive."""
+    pairings = np.asarray(probe["channel_pairings"], dtype=np.intp)
+    figure = _plot_probe_registration(
+        mesh["nodes"],
+        mesh["elements"],
+        np.asarray(probe["sourcepos"]),
+        np.asarray(probe["detpos"]),
+        np.asarray(probe["sourcedir"]),
+        np.asarray(probe["detnorms"]),
+        pairings[:, 0],
+        pairings[:, 1],
+    )
+    diagnostic_path = archive_path.with_name(_PROBE_DIAGNOSTIC_FILENAME)
+    diagnostic_path.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(diagnostic_path)
 
 
 def prepare_jacobian_probe(
@@ -85,7 +109,9 @@ def prepare_jacobian_probe(
         ``probe_settings`` and all six of its fields are required even when a
         previously prepared probe archive is reused.
     plot : bool, default=False
-        Scalar flag indicating whether to create the registration diagnostic.
+        Whether to create the registration diagnostic and save it as
+        ``register_probe_diagnostic.png`` beside the configured probe archive.
+        This also applies when an existing probe archive is reused.
     save_probe : bool, default=True
         Scalar flag indicating whether to save the prepared probe NPZ archive.
     overwrite : bool, default=False
@@ -107,7 +133,10 @@ def prepare_jacobian_probe(
 
     archive_path = resolve_prepared_input_path(experiment_config, "probefile")
     if archive_path.is_file() and not overwrite:
-        return load_npz_archive(archive_path, _PROBE_ARCHIVE_KEYS)
+        probe = load_npz_archive(archive_path, _PROBE_ARCHIVE_KEYS)
+        if plot:
+            _save_probe_registration_diagnostic(mesh, probe, archive_path)
+        return probe
 
     pairs = as_channel_pairing_array(channel_pairings)
     if normalized_flag == "index":
@@ -161,16 +190,7 @@ def prepare_jacobian_probe(
         "long_separation_indices": long_indices,
     }
     if plot:
-        _plot_probe_registration(
-            mesh["nodes"],
-            mesh["elements"],
-            registered_sources,
-            registered_detectors,
-            source_directions,
-            detector_directions,
-            source_indices,
-            detector_indices,
-        )
+        _save_probe_registration_diagnostic(mesh, probe, archive_path)
     if save_probe:
         save_npz_archive(archive_path, probe)
     return probe

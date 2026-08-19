@@ -65,7 +65,7 @@ def _(data_directory, np):
 
 @app.cell
 def _(mo):
-    rebuild_inputs = mo.ui.checkbox(value=False, label="Rebuild prepared mesh and probe")
+    rebuild_inputs = mo.ui.checkbox(value=True, label="Rebuild prepared mesh and probe")
     rebuild_inputs
     return (rebuild_inputs,)
 
@@ -83,8 +83,6 @@ def _(
         nodes=mesh_nodes,
         elements=mesh_elements,
         element_tissue_ids=mesh_tissue_ids,
-        orientation="RAS",
-        units="mm",
         experiment_config=experiment_config,
         overwrite=rebuild_inputs.value,
     )
@@ -114,12 +112,9 @@ def _(
         source_positions=source_positions,
         detector_positions=detector_positions,
         prepared_mesh=prepared_mesh,
-        units="mm",
-        orientation="RAS",
         channel_pairings=channel_pairings,
-        short_separation_flag="distance",
-        short_separation_arg=20.0,
         experiment_config=experiment_config,
+        plot=True,
         overwrite=rebuild_inputs.value,
     )
     return (prepared_probe,)
@@ -148,7 +143,7 @@ def _(mo):
     photon_count = mo.ui.number(
         start=1,
         step=100_000,
-        value=1_000_000,
+        value=5e8,
         label="Photons per MMC run",
     )
     photon_count
@@ -261,6 +256,11 @@ def _(jacobian_paths, jacobians, mo, np, runtimes, wavelengths):
             }
         )
     mo.ui.table(result_rows, selection=None, pagination=False)
+    return
+
+
+@app.cell
+def _():
     return
 
 

@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 from os import PathLike
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import h5py
 import numpy as np
@@ -17,6 +17,9 @@ from mmc_nirs.utils.mesh_utils import (
     make_surface_mesh,
 )
 from mmc_nirs.utils.prepared_input_io import require_config_section, require_fields
+
+if TYPE_CHECKING:
+    from matplotlib.figure import Figure
 
 PREPARED_PROBE_KEYS = {
     "sourcepos",
@@ -253,7 +256,7 @@ def _plot_probe_registration(
     detector_directions: np.ndarray,
     source_indices: np.ndarray,
     detector_indices: np.ndarray,
-) -> None:
+) -> "Figure":
     """Plot registered optodes, channel pairings, and signed surface distances."""
     import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
@@ -374,6 +377,7 @@ def _plot_probe_registration(
     )
 
     figure.suptitle("Probe registration diagnostic", fontsize=16, fontweight="bold")
+    return figure
 
 
 def load_channel_pairs_from_snirf(snirf_file: str | PathLike[str]) -> np.ndarray:

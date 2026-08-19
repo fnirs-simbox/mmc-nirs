@@ -151,6 +151,38 @@ def test_prepare_jacobian_probe_reuses_existing_archive_before_registration(
         np.testing.assert_array_equal(probe[key], value)
 
 
+def test_prepare_jacobian_probe_saves_diagnostic_beside_cached_probe(
+    experiment_config,
+    prepared_mesh,
+    monkeypatch,
+) -> None:
+    output_dir = experiment_config["experiment_dir"]
+    output_dir.mkdir()
+    cached = {
+        "sourcepos": np.ones((1, 3)),
+        "detpos": np.ones((1, 3)),
+        "sourcedir": np.ones((1, 3)),
+        "detnorms": np.ones((1, 3)),
+        "source_elements": np.array([0]),
+        "detector_elements": np.array([0]),
+        "channel_pairings": np.array([[0, 0]]),
+        "short_separation_indices": np.array([0]),
+        "long_separation_indices": np.array([], dtype=int),
+    }
+    np.savez(output_dir / "probe.npz", **cached)
+    saved_paths = []
+
+    class FakeFigure:
+        def savefig(self, path):
+            saved_paths.append(path)
+
+    monkeypatch.setattr(probe_module, "_plot_probe_registration", lambda *args: FakeFigure())
+
+    prepare_jacobian_probe([], [], prepared_mesh, [], experiment_config, plot=True)
+
+    assert saved_paths == [output_dir / "register_probe_diagnostic.png"]
+
+
 def test_prepare_jacobian_probe_overwrites_existing_archive(
     experiment_config,
     prepared_mesh,

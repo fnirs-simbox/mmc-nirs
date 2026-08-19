@@ -1,3 +1,10 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "marimo",
+# ]
+# ///
+
 import marimo
 
 __generated_with = "0.24.0"
@@ -469,7 +476,7 @@ def _(mo):
     photon_count = mo.ui.number(
         start=1,
         step=100_000,
-        value=1_000_000,
+        value=5e8,
         label="Photons per MMC run",
     )
     photon_count
@@ -602,6 +609,7 @@ def _(
             overwrite=overwrite_jacobians.value,
         )
         generation_seconds[_run_wavelength] = time.perf_counter() - start_time
+        print(f"{_run_wavelength} wavelength finished.")
     return generated_jacobians, generation_seconds
 
 
@@ -644,6 +652,16 @@ def _(
             mo.ui.table(output_rows, selection=None, pagination=False),
         ]
     )
+    return
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _():
     return
 
 
