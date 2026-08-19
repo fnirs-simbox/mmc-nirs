@@ -15,14 +15,10 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from huggingface_hub import hf_hub_download
+from mmc_nirs.loaders.hf_loader import download_hf_resource
 
 __all__ = ["get_mmc_executable"]
 
-_REPOSITORY = "nielsbracher/fnirs-simbox-assets"
-_REPO_TYPE = "dataset"
-_MANIFEST_PATH = "mmc-runtime/manifest.json"
-_TOKEN_PATH = Path(__file__).resolve().parents[2] / "tokens" / "HF_TOKEN.txt"
 _EXECUTABLE_PATHS = {
     "linux-x86_64": PurePosixPath("mmc/bin/mmc"),
     "macos-arm64": PurePosixPath("mmc/bin/mmc"),
@@ -78,27 +74,6 @@ def _executable_path(cache_directory: Path, platform_key: str) -> Path:
 def _ensure_executable_permission(executable: Path, platform_key: str) -> None:
     if not platform_key.startswith("windows-"):
         executable.chmod(executable.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-
-
-def _read_token() -> str:
-    try:
-        token = _TOKEN_PATH.read_text(encoding="utf-8").strip()
-    except FileNotFoundError as error:
-        raise RuntimeError(f"Hugging Face token file not found: {_TOKEN_PATH}") from error
-    if not token:
-        raise RuntimeError(f"Hugging Face token file is empty: {_TOKEN_PATH}")
-    return token
-
-
-def _download(filename: str, token: str) -> Path:
-    return Path(
-        hf_hub_download(
-            repo_id=_REPOSITORY,
-            repo_type=_REPO_TYPE,
-            filename=filename,
-            token=token,
-        )
-    )
 
 
 def _load_artifact(manifest_path: Path, platform_key: str) -> tuple[str, str]:
@@ -201,9 +176,9 @@ def _install_archive(archive_path: Path, cache_directory: Path, platform_key: st
 def get_mmc_executable() -> Path:
     """Return the platform's MMC executable, downloading and caching it if needed.
 
-    The archive is selected from the private runtime manifest, authenticated
-    with ``tokens/HF_TOKEN.txt``, verified before extraction, and installed in
-    the current user's cache directory.
+    The archive is selected from the public runtime manifest, downloaded
+    anonymously to the current user's managed cache, verified before
+    extraction, and installed in that cache.
     """
     platform_key = _detect_platform()
     cache_directory = _user_cache_directory(platform_key)
@@ -212,9 +187,13 @@ def get_mmc_executable() -> Path:
         _ensure_executable_permission(cached_executable, platform_key)
         return cached_executable
 
-    token = _read_token()
-    manifest_path = _download(_MANIFEST_PATH, token)
+    manifest_path = download_hf_resource("runtime", "manifest", assets_root=cache_directory)
     archive_remote_path, expected_sha256 = _load_artifact(manifest_path, platform_key)
-    archive_path = _download(archive_remote_path, token)
+    archive_path = download_hf_resource(
+        "runtime",
+        "archive",
+        assets_root=cache_directory,
+        path_in_repo=archive_remote_path,
+    )
     _verify_archive(archive_path, expected_sha256, platform_key)
     return _install_archive(archive_path, cache_directory, platform_key)
