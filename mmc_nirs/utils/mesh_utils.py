@@ -3,13 +3,13 @@
 import itertools
 from collections.abc import Mapping
 from numbers import Integral
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 import trimesh
 from numpy.typing import ArrayLike
 
-from .prepared_input_io import require_fields
+from .prepared_input_io import require_config_section, require_fields
 
 PREPARED_MESH_KEYS = {
     "nodes",
@@ -17,6 +17,11 @@ PREPARED_MESH_KEYS = {
     "element_tissue_ids",
     "ordered_tissue_ids",
     "ordered_tissues",
+}
+_MESH_SETTINGS_KEYS = {
+    "ordered_tissues",
+    "mesh_orientation",
+    "mesh_units",
 }
 
 
@@ -160,6 +165,12 @@ def validate_prepared_mesh(prepared_mesh: Mapping[str, ArrayLike]) -> dict[str, 
         prepared_mesh["ordered_tissues"],
     )
     ordered_tissue_ids, ordered_tissues = ordered_tissue_arrays(tissue_mapping)
+    unknown_ids = np.setdiff1d(np.unique(tissue_ids), ordered_tissue_ids)
+    if unknown_ids.size:
+        raise ValueError(
+            "prepared_mesh['element_tissue_ids'] contains IDs not represented by ordered_tissues: "
+            f"{unknown_ids.tolist()}"
+        )
     return {
         "nodes": nodes,
         "elements": elements,
@@ -197,6 +208,36 @@ def make_orientation_matrices() -> dict[str, np.ndarray]:
             code = "".join(axis_letters[axis][sign] for axis, sign in zip(axis_order, signs, strict=True))
             matrices[code] = np.column_stack([axis_vectors[letter] for letter in code])
     return matrices
+
+
+def validate_mesh_settings(experiment_config: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate mesh configuration and return canonical preparation values."""
+    mesh_settings = require_config_section(experiment_config, "mesh_settings", _MESH_SETTINGS_KEYS)
+    ordered_tissue_ids, ordered_tissues = ordered_tissue_arrays(mesh_settings["ordered_tissues"])
+
+    units = mesh_settings["mesh_units"]
+    try:
+        normalized_units = units.lower()
+    except AttributeError as error:
+        raise ValueError("mesh_units must be either 'mm', 'cm' or 'm'") from error
+    unit_scales = {"mm": 1.0, "cm": 10.0, "m": 1_000.0}
+    try:
+        unit_scale = unit_scales[normalized_units]
+    except KeyError as error:
+        raise ValueError("mesh_units must be either 'mm', 'cm' or 'm'") from error
+
+    orientation = mesh_settings["mesh_orientation"]
+    try:
+        orientation_matrix = make_orientation_matrices()[orientation.upper()]
+    except (AttributeError, KeyError) as error:
+        raise ValueError(f"Unknown mesh orientation {orientation!r}") from error
+
+    return {
+        "ordered_tissue_ids": ordered_tissue_ids,
+        "ordered_tissues": ordered_tissues,
+        "unit_scale": unit_scale,
+        "orientation_matrix": orientation_matrix,
+    }
 
 
 def _find_containing_elements(

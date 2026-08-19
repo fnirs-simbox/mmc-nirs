@@ -21,7 +21,7 @@ def register_probe(
     mesh_elements: ArrayLike,
     probe_orientation: str = "RAS",
     probe_units: str = "mm",
-    embedding_step: float = 0.1,
+    embedding_step: float = 0.5,
     max_embedding_steps: int = 1_000,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Register fNIRS source and detector positions to a tetrahedral head mesh.
@@ -42,7 +42,7 @@ def register_probe(
     probe_units : {"mm", "cm", "m"}, default="mm"
         Unit used by the probe coordinates. Mesh coordinates are assumed to be
         millimetres.
-    embedding_step : float, default=0.1
+    embedding_step : float, default=0.5
         Distance in millimetres by which exterior optodes move toward the mesh
         center during each embedding iteration.
     max_embedding_steps : int, default=1000

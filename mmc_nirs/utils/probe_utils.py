@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 from os import PathLike
-from typing import Literal
+from typing import Any, Literal
 
 import h5py
 import numpy as np
@@ -13,9 +13,10 @@ from mmc_nirs.utils.mesh_utils import (
     _find_containing_elements,
     as_coordinate_array,
     as_element_array,
+    make_orientation_matrices,
     make_surface_mesh,
 )
-from mmc_nirs.utils.prepared_input_io import require_fields
+from mmc_nirs.utils.prepared_input_io import require_config_section, require_fields
 
 PREPARED_PROBE_KEYS = {
     "sourcepos",
@@ -26,6 +27,72 @@ PREPARED_PROBE_KEYS = {
     "detector_elements",
     "channel_pairings",
 }
+_PROBE_SETTINGS_KEYS = {
+    "probe_units",
+    "probe_orientation",
+    "short_separation_flag",
+    "short_separation_arg",
+    "embedding_step",
+    "max_embedding_steps",
+}
+
+
+def validate_probe_settings(experiment_config: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate probe configuration and return canonical registration values."""
+    probe_settings = require_config_section(experiment_config, "probe_settings", _PROBE_SETTINGS_KEYS)
+
+    units = probe_settings["probe_units"]
+    if not isinstance(units, str) or units.lower() not in {"mm", "cm", "m"}:
+        raise ValueError("probe_units must be either 'mm', 'cm', or 'm'")
+
+    orientation = probe_settings["probe_orientation"]
+    try:
+        make_orientation_matrices()[orientation.upper()]
+    except (AttributeError, KeyError) as error:
+        raise ValueError(f"Unknown probe orientation {orientation!r}") from error
+
+    embedding_step = probe_settings["embedding_step"]
+    if (
+        not isinstance(embedding_step, (int, float, np.integer, np.floating))
+        or isinstance(embedding_step, (bool, np.bool_))
+        or not np.isfinite(embedding_step)
+        or embedding_step <= 0
+    ):
+        raise ValueError("embedding_step must be a finite positive scalar")
+
+    max_embedding_steps = probe_settings["max_embedding_steps"]
+    if (
+        not isinstance(max_embedding_steps, (int, np.integer))
+        or isinstance(max_embedding_steps, (bool, np.bool_))
+        or max_embedding_steps < 0
+    ):
+        raise ValueError("max_embedding_steps must be a non-negative integer")
+
+    short_separation_flag = probe_settings["short_separation_flag"]
+    short_separation_arg = probe_settings["short_separation_arg"]
+    if not isinstance(short_separation_flag, str):
+        raise ValueError("short_separation_flag must be either 'distance' or 'index'")
+    normalized_flag = short_separation_flag.lower()
+    if normalized_flag not in {"distance", "index"}:
+        raise ValueError("short_separation_flag must be either 'distance' or 'index'")
+    if normalized_flag == "distance":
+        if not isinstance(short_separation_arg, (float, np.floating)) or not np.isfinite(short_separation_arg):
+            raise TypeError("short_separation_arg must be a finite float when short_separation_flag is 'distance'")
+        if short_separation_arg < 0:
+            raise ValueError("short_separation_arg distance must be non-negative")
+    elif not isinstance(short_separation_arg, list) or not all(
+        isinstance(index, (int, np.integer)) and not isinstance(index, bool) for index in short_separation_arg
+    ):
+        raise TypeError("short_separation_arg must be a list of integers when short_separation_flag is 'index'")
+
+    return {
+        "probe_units": units.lower(),
+        "probe_orientation": orientation.upper(),
+        "short_separation_flag": normalized_flag,
+        "short_separation_arg": short_separation_arg,
+        "embedding_step": embedding_step,
+        "max_embedding_steps": max_embedding_steps,
+    }
 
 
 def as_channel_pairing_array(values: ArrayLike, name: str = "channel_pairings") -> np.ndarray:

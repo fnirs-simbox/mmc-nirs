@@ -163,7 +163,8 @@ def _(input_directory, load_config):
 def _(config_path, experiment_config, mo):
     configured_wavelengths = ", ".join(str(value) for value in experiment_config["wavelengths"])
     configured_tissues = "\n".join(
-        f"- `{tissue_id}`: `{tissue_name}`" for tissue_id, tissue_name in experiment_config["ordered_tissues"].items()
+        f"- `{tissue_id}`: `{tissue_name}`"
+        for tissue_id, tissue_name in experiment_config["mesh_settings"]["ordered_tissues"].items()
     )
     mo.md(
         f"""
@@ -231,7 +232,6 @@ def _(mo, standard_head_directory, standard_head_files):
 @app.cell
 def _(np, standard_head_directory):
     standard_mesh_path = standard_head_directory / "colin27_mesh.npz"
-    orientation_path = standard_head_directory / "orientation.txt"
 
     with np.load(standard_mesh_path, allow_pickle=False) as standard_mesh_archive:
         nodes_with_tissue_ids = standard_mesh_archive["nodes"].copy()
@@ -245,37 +245,33 @@ def _(np, standard_head_directory):
     input_nodes = nodes_with_tissue_ids[:, :3]
     input_elements = elements_with_tissue_ids[:, :4]
     input_element_tissue_ids = elements_with_tissue_ids[:, -1]
-    mesh_orientation = orientation_path.read_text(encoding="utf-8").strip()
-    mesh_units = "mm"
     return (
         input_element_tissue_ids,
         input_elements,
         input_nodes,
-        mesh_orientation,
-        mesh_units,
         standard_mesh_path,
     )
 
 
 @app.cell
 def _(
+    experiment_config,
     input_element_tissue_ids,
     input_elements,
     input_nodes,
-    mesh_orientation,
-    mesh_units,
     mo,
     np,
     standard_mesh_path,
 ):
     input_tissue_ids = ", ".join(str(int(value)) for value in np.unique(input_element_tissue_ids))
+    mesh_settings = experiment_config["mesh_settings"]
     mo.md(
         f"""
         ## 4. Prepare the mesh
 
         Input archive: `{standard_mesh_path}`
-        Orientation: `{mesh_orientation}`
-        Units: `{mesh_units}`
+        Orientation: `{mesh_settings["mesh_orientation"]}`
+        Units: `{mesh_settings["mesh_units"]}`
         Nodes: **{len(input_nodes):,}**
         Tetrahedra: **{len(input_elements):,}**
         Element tissue IDs present: **{input_tissue_ids}**
@@ -306,8 +302,6 @@ def _(
     input_element_tissue_ids,
     input_elements,
     input_nodes,
-    mesh_orientation,
-    mesh_units,
     prepare_jacobian_mesh,
     rebuild_prepared_inputs,
 ):
@@ -315,8 +309,6 @@ def _(
         nodes=input_nodes,
         elements=input_elements,
         element_tissue_ids=input_element_tissue_ids,
-        orientation=mesh_orientation,
-        units=mesh_units,
         experiment_config=experiment_config,
         overwrite=rebuild_prepared_inputs.value,
     )
@@ -372,11 +364,17 @@ def _(input_directory, load_channel_pairs_from_snirf, loadmat, np):
 def _(
     channel_pairings,
     detector_positions,
+    experiment_config,
     mo,
     sd_path,
     snirf_path,
     source_positions,
 ):
+    probe_settings = experiment_config["probe_settings"]
+    if probe_settings["short_separation_flag"] == "distance":
+        separation_rule = f"at most **{probe_settings['short_separation_arg']:g} mm**"
+    else:
+        separation_rule = f"listed by channel index: **{probe_settings['short_separation_arg']}**"
     mo.md(f"""
     ## 5. Prepare and register the probe
 
@@ -386,9 +384,13 @@ def _(
     Detectors: **{len(detector_positions)}**
     Channels: **{len(channel_pairings)}**
 
-    The probe coordinates use millimetres and `LIA` orientation. Channels
-    with registered source-detector distance at most **20 mm** are treated
-    as short separation.
+    The probe coordinates use `{probe_settings["probe_units"]}` units and
+    `{probe_settings["probe_orientation"]}` orientation. Short-separation
+    channels are {separation_rule}.
+
+    Registration uses an embedding step of
+    `{probe_settings["embedding_step"]} mm` and at most
+    `{probe_settings["max_embedding_steps"]}` embedding steps.
 
     These units, orientation, and short-separation rules were recovered
     from the SD file and/or the associated study documentation. There is no
@@ -413,11 +415,7 @@ def _(
         source_positions=source_positions,
         detector_positions=detector_positions,
         prepared_mesh=prepared_mesh,
-        units="mm",
-        orientation="LIA",
         channel_pairings=channel_pairings,
-        short_separation_flag="distance",
-        short_separation_arg=20.0,
         experiment_config=experiment_config,
         plot=rebuild_prepared_inputs.value,
         overwrite=rebuild_prepared_inputs.value,

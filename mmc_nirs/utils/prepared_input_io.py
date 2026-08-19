@@ -20,6 +20,30 @@ def require_fields(
         raise ValueError(f"{description} is missing required field(s): {missing}")
 
 
+def require_config_section(
+    experiment_config: Mapping[str, Any],
+    section_name: str,
+    required_fields: Collection[str],
+) -> Mapping[str, Any]:
+    """Return a configuration section after requiring all standardized fields."""
+    required = sorted(required_fields)
+    required_text = ", ".join(required)
+    section = experiment_config.get(section_name)
+    if not isinstance(section, Mapping):
+        raise ValueError(
+            f"experiment_config[{section_name!r}] must be a mapping; "
+            f"required keys: {required_text}; missing keys: {required_text}"
+        )
+
+    missing = sorted(set(required).difference(section))
+    if missing:
+        missing_text = ", ".join(missing)
+        raise ValueError(
+            f"experiment_config[{section_name!r}] required keys: {required_text}; missing keys: {missing_text}"
+        )
+    return section
+
+
 def resolve_prepared_input_path(experiment_config: Mapping[str, Any], filename_key: str) -> Path:
     """Resolve a configured prepared-input archive path."""
     filepaths = experiment_config.get("filepaths")

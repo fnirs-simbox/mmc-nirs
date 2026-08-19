@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import ArrayLike
 
+from mmc_nirs.utils.mesh_utils import validate_prepared_mesh
 from mmc_nirs.utils.prepared_input_io import (
     load_npz_archive,
     resolve_prepared_input_path,
@@ -17,6 +18,7 @@ from mmc_nirs.utils.probe_utils import (
     as_channel_pairing_array,
     load_channel_pairs_from_snirf as load_channel_pairs_from_snirf,
     normalize_channel_pairings,
+    validate_probe_settings,
 )
 from .register_probe import register_probe
 
@@ -30,14 +32,8 @@ def prepare_jacobian_probe(
     source_positions: ArrayLike,
     detector_positions: ArrayLike,
     prepared_mesh: Mapping[str, ArrayLike],
-    units: str,
-    orientation: str,
     channel_pairings: ArrayLike,
-    short_separation_flag: str,
-    short_separation_arg: float | list[int],
     experiment_config: Mapping[str, Any],
-    embedding_step: float = 0.1,
-    max_embedding_steps: int = 1_000,
     plot: bool = False,
     save_probe: bool = True,
     overwrite: bool = False,
@@ -56,33 +52,38 @@ def prepare_jacobian_probe(
     detector_positions : array-like
         Detector coordinates with shape ``(n_detectors, 3)``.
     prepared_mesh : mapping
-        Prepared tetrahedral mesh containing a ``"nodes"`` array with shape
-        ``(n_nodes, 3)`` and an ``"elements"`` array with shape
-        ``(n_elements, 4)``. Element indices may be zero-based or one-based.
-    units : {"mm", "cm", "m"}
-        Unit used by ``source_positions`` and ``detector_positions``. This is a
-        scalar string; prepared mesh coordinates are assumed to be millimetres.
-    orientation : str
-        Three-letter anatomical orientation code describing the probe axes,
-        such as ``"RAS"`` or ``"LIA"``. This is a scalar string containing one
-        letter from each anatomical axis pair.
+        Prepared tetrahedral mesh containing ``"nodes"``, ``"elements"``,
+        ``"element_tissue_ids"``, ``"ordered_tissue_ids"``, and
+        ``"ordered_tissues"``. Elements must have shape ``(n_elements, 4)``
+        with zero-based indices. The complete mesh is validated even when a
+        previously prepared probe archive is reused.
     channel_pairings : array-like
         Source-detector index pairs with shape ``(n_channels, 2)``. Indices may
         be zero-based or one-based.
-    short_separation_flag : {"distance", "index"}
-        Scalar string selecting how short-separation channels are identified.
-    short_separation_arg : float or list[int]
-        A finite, non-negative scalar distance in millimetres when
-        ``short_separation_flag`` is ``"distance"``. When the flag is
-        ``"index"``, this must be a one-dimensional list of zero-based channel
-        indices with length ``n_short_channels``.
     experiment_config : mapping
-        Configuration with a top-level ``"experiment_dir"`` path and a
-        ``"filepaths"`` mapping containing an NPZ ``"probefile"`` name.
-    embedding_step : float, default=0.1
-        Positive scalar embedding distance in millimetres applied per iteration.
-    max_embedding_steps : int, default=1000
-        Non-negative scalar maximum number of embedding iterations.
+        Experiment configuration containing:
+
+        - ``experiment_dir``: path beneath which prepared outputs are stored.
+        - ``filepaths.probefile``: path of the prepared probe NPZ archive,
+          relative to ``experiment_dir`` unless absolute.
+        - ``probe_settings.probe_units``: units used by ``source_positions``
+          and ``detector_positions``; one of ``"mm"``, ``"cm"``, or ``"m"``.
+          Prepared mesh coordinates are assumed to be millimetres.
+        - ``probe_settings.probe_orientation``: three-letter anatomical
+          orientation code describing the probe axes, such as ``"RAS"`` or
+          ``"LIA"``.
+        - ``probe_settings.short_separation_flag``: ``"distance"`` or
+          ``"index"``, selecting how short-separation channels are identified.
+        - ``probe_settings.short_separation_arg``: a finite, non-negative float
+          distance in millimetres when the flag is ``"distance"``; when the
+          flag is ``"index"``, a list of zero-based channel indices.
+        - ``probe_settings.embedding_step``: positive scalar embedding distance
+          in millimetres applied per iteration.
+        - ``probe_settings.max_embedding_steps``: non-negative integer maximum
+          number of embedding iterations.
+
+        ``probe_settings`` and all six of its fields are required even when a
+        previously prepared probe archive is reused.
     plot : bool, default=False
         Scalar flag indicating whether to create the registration diagnostic.
     save_probe : bool, default=True
@@ -99,28 +100,14 @@ def prepare_jacobian_probe(
         shapes ``(n_sources,)`` or ``(n_detectors,)``; ``channel_pairings`` has
         shape ``(n_channels, 2)``; and separation-index fields are one-dimensional.
     """
+    probe_settings = validate_probe_settings(experiment_config)
+    normalized_flag = probe_settings["short_separation_flag"]
+    short_separation_arg = probe_settings["short_separation_arg"]
+    mesh = validate_prepared_mesh(prepared_mesh)
+
     archive_path = resolve_prepared_input_path(experiment_config, "probefile")
     if archive_path.is_file() and not overwrite:
         return load_npz_archive(archive_path, _PROBE_ARCHIVE_KEYS)
-
-    normalized_flag = short_separation_flag.lower()
-    if normalized_flag not in {"distance", "index"}:
-        raise ValueError("short_separation_flag must be either 'distance' or 'index'")
-    if normalized_flag == "distance":
-        if not isinstance(short_separation_arg, (float, np.floating)) or not np.isfinite(short_separation_arg):
-            raise TypeError("short_separation_arg must be a finite float when short_separation_flag is 'distance'")
-        if short_separation_arg < 0:
-            raise ValueError("short_separation_arg distance must be non-negative")
-    elif not isinstance(short_separation_arg, list) or not all(
-        isinstance(index, (int, np.integer)) and not isinstance(index, bool) for index in short_separation_arg
-    ):
-        raise TypeError("short_separation_arg must be a list of integers when short_separation_flag is 'index'")
-
-    try:
-        mesh_nodes = prepared_mesh["nodes"]
-        mesh_elements = prepared_mesh["elements"]
-    except (KeyError, TypeError) as error:
-        raise ValueError("prepared_mesh must contain 'nodes' and 'elements'") from error
 
     pairs = as_channel_pairing_array(channel_pairings)
     if normalized_flag == "index":
@@ -138,12 +125,12 @@ def prepare_jacobian_probe(
     ) = register_probe(
         source_positions,
         detector_positions,
-        mesh_nodes,
-        mesh_elements,
-        probe_orientation=orientation,
-        probe_units=units,
-        embedding_step=embedding_step,
-        max_embedding_steps=max_embedding_steps,
+        mesh["nodes"],
+        mesh["elements"],
+        probe_orientation=probe_settings["probe_orientation"],
+        probe_units=probe_settings["probe_units"],
+        embedding_step=probe_settings["embedding_step"],
+        max_embedding_steps=probe_settings["max_embedding_steps"],
     )
 
     normalized_pairings = normalize_channel_pairings(
@@ -175,8 +162,8 @@ def prepare_jacobian_probe(
     }
     if plot:
         _plot_probe_registration(
-            mesh_nodes,
-            mesh_elements,
+            mesh["nodes"],
+            mesh["elements"],
             registered_sources,
             registered_detectors,
             source_directions,

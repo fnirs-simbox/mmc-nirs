@@ -9,9 +9,30 @@ from mmc_nirs.utils.mesh_utils import (
     find_closest_nodes,
     make_orientation_matrices,
     ordered_tissue_arrays,
+    validate_mesh_settings,
     validate_prepared_mesh,
     validate_tissue_property_coverage,
 )
+
+
+def test_validate_mesh_settings_returns_canonical_preparation_values() -> None:
+    settings = validate_mesh_settings(
+        {
+            "mesh_settings": {
+                "ordered_tissues": {"1": "scalp", "0": "ambient_air"},
+                "mesh_orientation": "lia",
+                "mesh_units": "cm",
+            }
+        }
+    )
+
+    np.testing.assert_array_equal(settings["ordered_tissue_ids"], [0, 1])
+    np.testing.assert_array_equal(settings["ordered_tissues"], ["ambient_air", "scalp"])
+    assert settings["unit_scale"] == 10.0
+    np.testing.assert_array_equal(
+        settings["orientation_matrix"],
+        make_orientation_matrices()["LIA"],
+    )
 
 
 def test_orientation_matrices_contain_all_valid_orientations() -> None:
@@ -91,6 +112,19 @@ def test_validate_prepared_mesh_returns_canonical_copies() -> None:
     np.testing.assert_array_equal(prepared["element_tissue_ids"], [1])
     np.testing.assert_array_equal(prepared["ordered_tissue_ids"], [0, 1])
     np.testing.assert_array_equal(prepared["ordered_tissues"], ["ambient_air", "tissue"])
+
+
+def test_validate_prepared_mesh_rejects_unrepresented_element_tissue_ids() -> None:
+    with pytest.raises(ValueError, match="IDs not represented by ordered_tissues"):
+        validate_prepared_mesh(
+            {
+                "nodes": np.eye(3, 4).T,
+                "elements": [[0, 1, 2, 3]],
+                "element_tissue_ids": [2],
+                "ordered_tissue_ids": [0, 1],
+                "ordered_tissues": ["ambient_air", "tissue"],
+            }
+        )
 
 
 def test_validate_tissue_property_coverage_rejects_missing_media() -> None:
