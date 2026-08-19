@@ -6,19 +6,27 @@ from mmc_nirs import load_config, load_default_config
 
 
 def test_load_config_returns_bundled_experiment(tmp_path, monkeypatch) -> None:
-    assets_directory = tmp_path / "pain" / "assets"
-    assets_directory.mkdir(parents=True)
-    (assets_directory / "config.json").write_text(
+    assets_root = tmp_path / "downloads"
+    experiment_directory = assets_root / "experiments" / "pain"
+    experiment_directory.mkdir(parents=True)
+    (experiment_directory / "config.json").write_text(
         '{"name": "Pain", "experiment_dir": "ignored", "filepaths": {"meshfile": "mesh.npz"}}',
         encoding="utf-8",
     )
-    monkeypatch.setattr("mmc_nirs.loaders.config.ensure_experiment_assets", lambda experiment: assets_directory)
+    calls = []
 
-    config = load_default_config("pain")
+    def fake_download(category, keyword, **kwargs):
+        calls.append((category, keyword, kwargs))
+        return experiment_directory
+
+    monkeypatch.setattr("mmc_nirs.loaders.config.download_hf_resource", fake_download)
+
+    config = load_default_config("pain", assets_root=assets_root)
 
     assert config["name"] == "Pain"
     assert config["filepaths"]["meshfile"] == "mesh.npz"
-    assert config["experiment_dir"] == assets_directory
+    assert config["experiment_dir"] == experiment_directory
+    assert calls == [("experiment", "pain", {"assets_root": assets_root})]
 
 
 @pytest.mark.parametrize("experiment", ["", "../pain", "pain/config.json"])

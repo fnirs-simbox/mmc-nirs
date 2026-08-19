@@ -5,7 +5,7 @@ from os import PathLike
 from pathlib import Path
 from typing import Any
 
-from .assets import ensure_experiment_assets
+from .hf_loader import HF_RESOURCE_KEYWORDS, download_hf_resource
 
 
 def _read_config(config_path, description: str) -> dict[str, Any]:
@@ -21,13 +21,20 @@ def _read_config(config_path, description: str) -> dict[str, Any]:
     return config
 
 
-def load_default_config(experiment: str) -> dict[str, Any]:
+def load_default_config(
+    experiment: str,
+    *,
+    assets_root: str | PathLike[str] | None = None,
+) -> dict[str, Any]:
     """Load a bundled experiment configuration.
 
     Parameters
     ----------
     experiment : str
         Name of the experiment directory, for example ``"pain"``.
+    assets_root : str or path-like, optional
+        Root directory for downloaded project assets. Defaults to
+        ``./mmcnirs-assets``.
 
     Returns
     -------
@@ -43,13 +50,18 @@ def load_default_config(experiment: str) -> dict[str, Any]:
     json.JSONDecodeError
         If the configuration is not valid JSON.
     """
-    assets_directory = ensure_experiment_assets(experiment)
-    config_path = assets_directory / "config.json"
+    if not isinstance(experiment, str) or not experiment or Path(experiment).name != experiment:
+        raise ValueError("experiment must be a non-empty name, not a path")
+    if experiment not in HF_RESOURCE_KEYWORDS["experiment"]:
+        raise FileNotFoundError(f"No default experiment found for {experiment!r}")
+
+    experiment_directory = download_hf_resource("experiment", experiment, assets_root=assets_root)
+    config_path = experiment_directory / "config.json"
     if not config_path.is_file():
         raise FileNotFoundError(f"No configuration found for experiment {experiment!r}")
 
     config = _read_config(config_path, f"for experiment {experiment!r}")
-    config["experiment_dir"] = assets_directory
+    config["experiment_dir"] = experiment_directory
     return config
 
 

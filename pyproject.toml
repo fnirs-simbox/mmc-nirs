@@ -13,7 +13,7 @@ authors = [
 description = "Precomputed MMC forward models and loading tools for SimNIRS"
 readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 requires-python = ">=3.12, <3.15"
 keywords = ["fnirs", "monte-carlo", "neuroimaging", "photon-transport", "simulation"]
 classifiers = [
@@ -33,7 +33,6 @@ dependencies = [
   "huggingface-hub>=1.27.0",
   "matplotlib>=3.10.8",
   "numpy>=2.2.6",
-  "pyyaml>=6.0.3",
   "scipy>=1.15.3",
   "trimesh>=4.8.3",
 ]
@@ -45,14 +44,11 @@ dev = [
   "marimo>=0.24.0",
   "pre-commit>=4.5.1",
   "ruff>=0.14.13",
-  "tox>=4.34.1",
   "twine>=6.2.0",
 ]
 test = [
   "pytest>=9.0.2",
   "pytest-cov>=7.0.0",
-  "pytest-rerunfailures>=16.1",
-  "pytest-xdist>=3.8.0",
 ]
 all = ["mmc-nirs[dev,test]"]
 
@@ -134,9 +130,6 @@ include-package-data = true
 where = ["."]
 include = ["mmc_nirs*"]
 namespaces = false
-
-[tool.setuptools.package-data]
-"mmc_nirs.experiments" = ["*/assets.yaml"]
 
 [tool.check-wheel-contents]
 ignore = ["W002"]

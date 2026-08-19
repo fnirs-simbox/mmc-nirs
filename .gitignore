@@ -209,11 +209,8 @@ tempCodeRunnerFile.py
 # Ruff stuff:
 .ruff_cache/
 
-# Local external experiments used for manual loader testing
-/experiments/
-
-# Large experiment assets stored on Hugging Face
-/mmc_nirs/experiments/*/assets/
+# User-visible assets downloaded from Hugging Face
+/mmcnirs-assets/
 
 # Downloaded and generated data for the pain end-to-end example
 /legacy/pain_data/colin27/

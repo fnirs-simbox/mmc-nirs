@@ -20,10 +20,10 @@ def _():
     import marimo as mo
     import matplotlib.pyplot as plt
     import numpy as np
-    from huggingface_hub import snapshot_download
     from scipy.io import loadmat
 
     from mmc_nirs import load_config, load_standard_head
+    from mmc_nirs.loaders.hf_loader import download_hf_resource
     from mmc_nirs.light_transport import (
         prepare_jacobian_inputs,
         prepare_jacobian_mesh,
@@ -34,6 +34,7 @@ def _():
 
     return (
         Path,
+        download_hf_resource,
         generate_jacobian,
         json,
         load_channel_pairs_from_snirf,
@@ -46,7 +47,6 @@ def _():
         prepare_jacobian_inputs,
         prepare_jacobian_mesh,
         prepare_jacobian_probe,
-        snapshot_download,
         time,
     )
 
@@ -83,38 +83,10 @@ def _(Path):
 
 
 @app.cell
-def _(Path, snapshot_download):
-    def download_workflow_inputs(destination: Path, *, overwrite: bool = False) -> Path:
-        """Download every file in the private e2e-files dataset subtree."""
-        token_path = destination.parent / "tokens" / "HF_TOKEN.txt"
-        try:
-            token = token_path.read_text(encoding="utf-8").strip()
-        except FileNotFoundError as error:
-            raise RuntimeError(f"Hugging Face token file not found: {token_path}") from error
-        if not token:
-            raise RuntimeError(f"Hugging Face token file is empty: {token_path}")
-
-        snapshot_download(
-            repo_id="nielsbracher/fnirs-simbox-assets",
-            repo_type="dataset",
-            allow_patterns="e2e-files/**",
-            local_dir=destination,
-            token=token,
-            force_download=overwrite,
-        )
-
-        input_directory = destination / "e2e-files"
-        required_files = {
-            "FingerTapping.snirf",
-            "README.md",
-            "config.json",
-            "optical_properties.json",
-            "probe.SD",
-        }
-        missing_files = sorted(filename for filename in required_files if not (input_directory / filename).is_file())
-        if missing_files:
-            raise FileNotFoundError(f"Downloaded e2e-files directory is missing: {', '.join(missing_files)}")
-        return input_directory
+def _(download_hf_resource):
+    def download_workflow_inputs(*, overwrite: bool = False):
+        """Download every file in the public e2e-files dataset subtree."""
+        return download_hf_resource("workflow", "e2e-files", force_download=overwrite)
 
     return (download_workflow_inputs,)
 
@@ -130,9 +102,8 @@ def _(mo):
 
 
 @app.cell
-def _(download_workflow_inputs, notebook_directory, refresh_workflow_inputs):
+def _(download_workflow_inputs, refresh_workflow_inputs):
     input_directory = download_workflow_inputs(
-        notebook_directory,
         overwrite=refresh_workflow_inputs.value,
     )
     input_files = tuple(sorted(path.name for path in input_directory.iterdir() if path.is_file()))
@@ -152,8 +123,8 @@ def _(input_directory, input_files, mo):
 
         The entire `e2e-files` subtree is synchronized so `README.md` remains
         beside the scientific inputs. It documents their source, license,
-        access date, and provenance. The repository is private for now, so the
-        helper uses the same project token file as the MMC runtime.
+        access date, and provenance. The public files are downloaded through
+        the package's central Hugging Face loader without authentication.
         """
     )
     return
@@ -206,11 +177,9 @@ def _(mo):
 
 
 @app.cell
-def _(load_standard_head, notebook_directory, refresh_standard_head):
+def _(load_standard_head, refresh_standard_head):
     standard_head_directory = load_standard_head(
         "colin27",
-        save=True,
-        directory=notebook_directory,
         overwrite=refresh_standard_head.value,
     )
     standard_head_files = tuple(sorted(path.name for path in standard_head_directory.iterdir() if path.is_file()))
