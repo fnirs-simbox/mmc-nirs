@@ -63,7 +63,7 @@ def test_prepare_jacobian_inputs_normalizes_all_generator_inputs(inputs) -> None
         (
             {},
             {"detnorms": np.array([[0.0, 0.0, 2.0], [-1.0, 0.0, 0.0]])},
-            "prepare_jacobian_probe may not have been run",
+            "prepare_probe may not have been run",
         ),
         ({}, {"channel_pairings": np.array([[0, 2]])}, "out-of-range detector"),
         ({}, {"channel_pairings": np.array([[1, 1], [2, 2]])}, "out-of-range source"),

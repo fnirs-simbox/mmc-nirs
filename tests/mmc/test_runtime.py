@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import stat
 import zipfile
 from pathlib import Path
@@ -82,7 +83,7 @@ def test_get_mmc_executable_downloads_matching_verified_archive(
             },
         ),
     ]
-    if platform_key != "windows-x86_64":
+    if os.name != "nt" and platform_key != "windows-x86_64":
         assert executable.stat().st_mode & stat.S_IXUSR
 
 
@@ -99,7 +100,8 @@ def test_get_mmc_executable_reuses_cached_executable_without_download(tmp_path: 
     monkeypatch.setattr(runtime, "download_hf_resource", unexpected_download)
 
     assert runtime.get_mmc_executable() == executable
-    assert executable.stat().st_mode & stat.S_IXUSR
+    if os.name != "nt":
+        assert executable.stat().st_mode & stat.S_IXUSR
 
 
 def test_get_mmc_executable_rejects_hash_mismatch(tmp_path: Path, monkeypatch) -> None:

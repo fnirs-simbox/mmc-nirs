@@ -65,6 +65,30 @@ def validate_mmc_flux(flux: ArrayLike, node_count: int, description: str) -> np.
     return flux_array
 
 
+def validate_jacobian(
+    jacobian: ArrayLike,
+    source_count: int,
+    detector_count: int,
+    node_count: int,
+) -> np.ndarray:
+    """Return a finite, real Jacobian with source-major optode-pair rows."""
+    jacobian_array = np.asarray(jacobian)
+    if not np.issubdtype(jacobian_array.dtype, np.number) or np.issubdtype(
+        jacobian_array.dtype,
+        np.complexfloating,
+    ):
+        raise TypeError("jacobian must contain real numeric values")
+
+    expected_shape = (source_count * detector_count, node_count)
+    if jacobian_array.shape != expected_shape:
+        raise ValueError(f"jacobian must have shape {expected_shape}, got {jacobian_array.shape}")
+
+    jacobian_array = jacobian_array.astype(float, copy=False)
+    if not np.all(np.isfinite(jacobian_array)):
+        raise ValueError("jacobian contains non-finite values")
+    return jacobian_array
+
+
 def resolve_jacobian_save_path(save_path: str | Path | None) -> Path:
     """Validate and resolve the destination for a Jacobian archive."""
     if save_path is None:

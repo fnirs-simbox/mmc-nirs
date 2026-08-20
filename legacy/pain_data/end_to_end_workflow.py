@@ -19,8 +19,8 @@ def _():
     from mmc_nirs.loaders.hf_loader import download_hf_resource
     from mmc_nirs.light_transport import (
         prepare_jacobian_inputs,
-        prepare_jacobian_mesh,
-        prepare_jacobian_probe,
+        prepare_mesh,
+        prepare_probe,
     )
     from mmc_nirs.mmc.jacobian import generate_jacobian
     from mmc_nirs.utils.probe_utils import load_channel_pairs_from_snirf
@@ -38,8 +38,8 @@ def _():
         np,
         plt,
         prepare_jacobian_inputs,
-        prepare_jacobian_mesh,
-        prepare_jacobian_probe,
+        prepare_mesh,
+        prepare_probe,
         time,
     )
 
@@ -251,7 +251,7 @@ def _(
 
         The source archive uses `nodes` and `elem`. Node tissue IDs are stored
         in the last node column, while the last element column contains the MMC
-        tissue ID needed here. `prepare_jacobian_mesh` keeps the geometry and
+        tissue ID needed here. `prepare_mesh` keeps the geometry and
         element tissue IDs, normalizes indexing and units, converts orientation
         to RAS, and attaches the configured tissue order.
         """
@@ -277,10 +277,10 @@ def _(
     input_nodes,
     mesh_orientation,
     mesh_units,
-    prepare_jacobian_mesh,
+    prepare_mesh,
     rebuild_prepared_inputs,
 ):
-    prepared_mesh = prepare_jacobian_mesh(
+    prepared_mesh = prepare_mesh(
         nodes=input_nodes,
         elements=input_elements,
         element_tissue_ids=input_element_tissue_ids,
@@ -373,12 +373,12 @@ def _(
     detector_positions,
     experiment_config,
     plt,
-    prepare_jacobian_probe,
+    prepare_probe,
     prepared_mesh,
     rebuild_prepared_inputs,
     source_positions,
 ):
-    prepared_probe = prepare_jacobian_probe(
+    prepared_probe = prepare_probe(
         source_positions=source_positions,
         detector_positions=detector_positions,
         prepared_mesh=prepared_mesh,

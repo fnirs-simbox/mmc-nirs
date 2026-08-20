@@ -8,7 +8,7 @@ import numpy as np
 from matplotlib.lines import Line2D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-from verify_prepare_jacobian_probe import load_legacy_probe
+from verify_prepare_probe import load_legacy_probe
 
 
 DATA_DIRECTORY = Path(__file__).resolve().parent
@@ -111,7 +111,7 @@ def create_visualization(output_path: Path, show: bool = True) -> None:
     """Create and save the current-versus-legacy registration figure."""
     current_path = DATA_DIRECTORY / "current_probe.npz"
     if not current_path.is_file():
-        raise FileNotFoundError(f"{current_path} does not exist; run verify_prepare_jacobian_probe.py first")
+        raise FileNotFoundError(f"{current_path} does not exist; run verify_prepare_probe.py first")
 
     with np.load(DATA_DIRECTORY / "mesh.npz", allow_pickle=False) as mesh:
         nodes = mesh["nodes"][:, :3].copy()

@@ -103,7 +103,7 @@ def generate_jacobian(
     positional ``element_tissue_ids``, and parallel ``ordered_tissue_ids`` and
     ``ordered_tissues`` arrays. ``prepared_probe`` must contain the registered
     positions, directions, zero-based containing-element indices, and channel
-    pairings produced by :func:`prepare_jacobian_probe`.
+    pairings produced by :func:`prepare_probe`.
     """
     if not isinstance(save, bool):
         raise TypeError("save must be a boolean")

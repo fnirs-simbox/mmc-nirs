@@ -17,7 +17,6 @@ from mmc_nirs.utils.probe_utils import (
     PREPARED_PROBE_KEYS,
     _plot_probe_registration,
     as_channel_pairing_array,
-    load_channel_pairs_from_snirf as load_channel_pairs_from_snirf,
     normalize_channel_pairings,
     validate_probe_settings,
 )
@@ -52,7 +51,7 @@ def _save_probe_registration_diagnostic(
     figure.savefig(diagnostic_path)
 
 
-def prepare_jacobian_probe(
+def prepare_probe(
     source_positions: ArrayLike,
     detector_positions: ArrayLike,
     prepared_mesh: Mapping[str, ArrayLike],

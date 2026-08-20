@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from mmc_nirs.light_transport.prepare_jacobian_mesh import prepare_jacobian_mesh
+from mmc_nirs.light_transport.prepare_mesh import prepare_mesh
 
 
 @pytest.fixture
@@ -26,8 +26,8 @@ def experiment_config(tmp_path):
     }
 
 
-def test_prepare_jacobian_mesh_returns_normalized_mesh(experiment_config) -> None:
-    prepared = prepare_jacobian_mesh(
+def test_prepare_mesh_returns_normalized_mesh(experiment_config) -> None:
+    prepared = prepare_mesh(
         np.zeros((4, 3)),
         [[0, 1, 2, 3]],
         [1],
@@ -50,7 +50,7 @@ def test_prepare_jacobian_mesh_returns_normalized_mesh(experiment_config) -> Non
     )
 
 
-def test_prepare_jacobian_mesh_reorients_and_preserves_ordered_tissue_ids(experiment_config) -> None:
+def test_prepare_mesh_reorients_and_preserves_ordered_tissue_ids(experiment_config) -> None:
     nodes = np.array(
         [
             [0.001, 0.002, 0.003],
@@ -70,7 +70,7 @@ def test_prepare_jacobian_mesh_reorients_and_preserves_ordered_tissue_ids(experi
     }
     experiment_config["mesh_settings"]["mesh_orientation"] = "LIA"
     experiment_config["mesh_settings"]["mesh_units"] = "m"
-    mesh = prepare_jacobian_mesh(nodes, np.tile([[1, 2, 3, 4]], (4, 1)), [5, 4, 3, 2], experiment_config)
+    mesh = prepare_mesh(nodes, np.tile([[1, 2, 3, 4]], (4, 1)), [5, 4, 3, 2], experiment_config)
 
     np.testing.assert_allclose(mesh["nodes"], nodes * 1000 @ np.array([[-1, 0, 0], [0, 0, 1], [0, -1, 0]]).T)
     np.testing.assert_array_equal(mesh["elements"], np.tile([[0, 1, 2, 3]], (4, 1)))
@@ -82,8 +82,8 @@ def test_prepare_jacobian_mesh_reorients_and_preserves_ordered_tissue_ids(experi
     )
 
 
-def test_prepare_jacobian_mesh_saves_to_configured_path(experiment_config) -> None:
-    prepared = prepare_jacobian_mesh(
+def test_prepare_mesh_saves_to_configured_path(experiment_config) -> None:
+    prepared = prepare_mesh(
         np.zeros((4, 3)),
         [[0, 1, 2, 3]],
         [1],
@@ -98,7 +98,7 @@ def test_prepare_jacobian_mesh_saves_to_configured_path(experiment_config) -> No
             np.testing.assert_array_equal(archive[key], value)
 
 
-def test_prepare_jacobian_mesh_reuses_existing_archive_before_validation(experiment_config) -> None:
+def test_prepare_mesh_reuses_existing_archive_before_validation(experiment_config) -> None:
     output_dir = experiment_config["experiment_dir"]
     output_dir.mkdir()
     cached = {
@@ -110,13 +110,13 @@ def test_prepare_jacobian_mesh_reuses_existing_archive_before_validation(experim
     }
     np.savez(output_dir / "mesh.npz", **cached)
 
-    prepared = prepare_jacobian_mesh([], [], [], experiment_config)
+    prepared = prepare_mesh([], [], [], experiment_config)
 
     for key, value in cached.items():
         np.testing.assert_array_equal(prepared[key], value)
 
 
-def test_prepare_jacobian_mesh_overwrites_existing_archive(experiment_config) -> None:
+def test_prepare_mesh_overwrites_existing_archive(experiment_config) -> None:
     output_dir = experiment_config["experiment_dir"]
     output_dir.mkdir()
     np.savez(
@@ -128,7 +128,7 @@ def test_prepare_jacobian_mesh_overwrites_existing_archive(experiment_config) ->
         ordered_tissues=list(experiment_config["mesh_settings"]["ordered_tissues"].values()),
     )
 
-    prepared = prepare_jacobian_mesh(
+    prepared = prepare_mesh(
         np.zeros((4, 3)),
         [[0, 1, 2, 3]],
         [1],
@@ -142,20 +142,20 @@ def test_prepare_jacobian_mesh_overwrites_existing_archive(experiment_config) ->
         np.testing.assert_array_equal(archive["nodes"], np.zeros((4, 3)))
 
 
-def test_prepare_jacobian_mesh_rejects_incompatible_cache(experiment_config) -> None:
+def test_prepare_mesh_rejects_incompatible_cache(experiment_config) -> None:
     output_dir = experiment_config["experiment_dir"]
     output_dir.mkdir()
     np.savez(output_dir / "mesh.npz", nodes=np.zeros((4, 3)))
 
     with pytest.raises(ValueError, match="missing required field"):
-        prepare_jacobian_mesh([], [], [], experiment_config)
+        prepare_mesh([], [], [], experiment_config)
 
 
-def test_prepare_jacobian_mesh_rejects_non_npz_output_name(experiment_config) -> None:
+def test_prepare_mesh_rejects_non_npz_output_name(experiment_config) -> None:
     experiment_config["filepaths"]["meshfile"] = "mesh.mat"
 
     with pytest.raises(ValueError, match=".npz"):
-        prepare_jacobian_mesh([], [], [], experiment_config)
+        prepare_mesh([], [], [], experiment_config)
 
 
 @pytest.mark.parametrize(
@@ -168,7 +168,7 @@ def test_prepare_jacobian_mesh_rejects_non_npz_output_name(experiment_config) ->
         ("mesh_units", "km", "mesh_units"),
     ],
 )
-def test_prepare_jacobian_mesh_rejects_invalid_input(experiment_config, field, value, message) -> None:
+def test_prepare_mesh_rejects_invalid_input(experiment_config, field, value, message) -> None:
     arguments = {
         "nodes": np.zeros((4, 3)),
         "elements": [[0, 1, 2, 3]],
@@ -181,11 +181,11 @@ def test_prepare_jacobian_mesh_rejects_invalid_input(experiment_config, field, v
         arguments[field] = value
 
     with pytest.raises(ValueError, match=message):
-        prepare_jacobian_mesh(**arguments)
+        prepare_mesh(**arguments)
 
 
 @pytest.mark.parametrize("invalid_id", [6, 99])
-def test_prepare_jacobian_mesh_rejects_invalid_element_tissue_ids(experiment_config, invalid_id) -> None:
+def test_prepare_mesh_rejects_invalid_element_tissue_ids(experiment_config, invalid_id) -> None:
     arguments = (
         np.zeros((4, 3)),
         [[0, 1, 2, 3]],
@@ -193,11 +193,11 @@ def test_prepare_jacobian_mesh_rejects_invalid_element_tissue_ids(experiment_con
         experiment_config,
     )
     with pytest.raises(ValueError, match="not represented by ordered_tissues"):
-        prepare_jacobian_mesh(*arguments)
+        prepare_mesh(*arguments)
 
 
-def test_prepare_jacobian_mesh_accepts_declared_background_id(experiment_config) -> None:
-    prepared = prepare_jacobian_mesh(
+def test_prepare_mesh_accepts_declared_background_id(experiment_config) -> None:
+    prepared = prepare_mesh(
         np.zeros((4, 3)),
         [[0, 1, 2, 3]],
         [0],
@@ -207,7 +207,7 @@ def test_prepare_jacobian_mesh_accepts_declared_background_id(experiment_config)
     np.testing.assert_array_equal(prepared["element_tissue_ids"], [0])
 
 
-def test_prepare_jacobian_mesh_rejects_invalid_ordered_tissues(experiment_config) -> None:
+def test_prepare_mesh_rejects_invalid_ordered_tissues(experiment_config) -> None:
     arguments = (
         np.zeros((4, 3)),
         [[0, 1, 2, 3]],
@@ -220,18 +220,18 @@ def test_prepare_jacobian_mesh_rejects_invalid_ordered_tissues(experiment_config
         "2": "scalp",
     }
     with pytest.raises(ValueError, match="duplicate tissue names"):
-        prepare_jacobian_mesh(*arguments)
+        prepare_mesh(*arguments)
 
     experiment_config["mesh_settings"]["ordered_tissues"] = {"0": "ambient_air", "2": "scalp"}
     with pytest.raises(ValueError, match="contiguous"):
-        prepare_jacobian_mesh(*arguments)
+        prepare_mesh(*arguments)
 
     del experiment_config["mesh_settings"]["ordered_tissues"]
     with pytest.raises(ValueError, match="missing keys: ordered_tissues"):
-        prepare_jacobian_mesh(*arguments)
+        prepare_mesh(*arguments)
 
 
-def test_prepare_jacobian_mesh_requires_complete_settings_before_cache_reuse(experiment_config) -> None:
+def test_prepare_mesh_requires_complete_settings_before_cache_reuse(experiment_config) -> None:
     output_dir = experiment_config["experiment_dir"]
     output_dir.mkdir()
     np.savez(
@@ -244,7 +244,7 @@ def test_prepare_jacobian_mesh_requires_complete_settings_before_cache_reuse(exp
     del experiment_config["mesh_settings"]["mesh_orientation"]
 
     with pytest.raises(ValueError) as error:
-        prepare_jacobian_mesh([], [], [], experiment_config)
+        prepare_mesh([], [], [], experiment_config)
 
     message = str(error.value)
     assert "required keys: mesh_orientation, mesh_units, ordered_tissues" in message

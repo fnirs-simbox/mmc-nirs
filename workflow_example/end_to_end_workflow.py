@@ -26,10 +26,11 @@ def _():
     from mmc_nirs.loaders.hf_loader import download_hf_resource
     from mmc_nirs.light_transport import (
         prepare_jacobian_inputs,
-        prepare_jacobian_mesh,
-        prepare_jacobian_probe,
+        prepare_mesh,
+        prepare_probe,
     )
     from mmc_nirs.mmc.jacobian import generate_jacobian
+    from mmc_nirs.utils.plot_jacobians import plot_tissue_sensitivity
     from mmc_nirs.utils.probe_utils import load_channel_pairs_from_snirf
 
     return (
@@ -44,9 +45,10 @@ def _():
         mo,
         np,
         plt,
+        plot_tissue_sensitivity,
         prepare_jacobian_inputs,
-        prepare_jacobian_mesh,
-        prepare_jacobian_probe,
+        prepare_mesh,
+        prepare_probe,
         time,
     )
 
@@ -254,7 +256,7 @@ def _(
 
         The source archive uses `nodes` and `elem`. Node tissue IDs are stored
         in the last node column, while the last element column contains the MMC
-        tissue ID needed here. `prepare_jacobian_mesh` keeps the geometry and
+        tissue ID needed here. `prepare_mesh` keeps the geometry and
         element tissue IDs, normalizes indexing and units, converts orientation
         to RAS, and attaches the configured tissue order.
         """
@@ -278,10 +280,10 @@ def _(
     input_element_tissue_ids,
     input_elements,
     input_nodes,
-    prepare_jacobian_mesh,
+    prepare_mesh,
     rebuild_prepared_inputs,
 ):
-    prepared_mesh = prepare_jacobian_mesh(
+    prepared_mesh = prepare_mesh(
         nodes=input_nodes,
         elements=input_elements,
         element_tissue_ids=input_element_tissue_ids,
@@ -382,12 +384,12 @@ def _(
     detector_positions,
     experiment_config,
     plt,
-    prepare_jacobian_probe,
+    prepare_probe,
     prepared_mesh,
     rebuild_prepared_inputs,
     source_positions,
 ):
-    prepared_probe = prepare_jacobian_probe(
+    prepared_probe = prepare_probe(
         source_positions=source_positions,
         detector_positions=detector_positions,
         prepared_mesh=prepared_mesh,
@@ -625,14 +627,48 @@ def _(
 
 
 @app.cell
-def _():
-    return
+def _(
+    generated_jacobians,
+    jacobian_paths,
+    mo,
+    plot_tissue_sensitivity,
+    prepared_mesh,
+    prepared_probe,
+    wavelengths,
+):
+    sensitivity_figures = {}
+    sensitivity_paths = {}
+    for _plot_wavelength, _jacobian_path in zip(wavelengths, jacobian_paths, strict=True):
+        _figure_filename = f"{_jacobian_path.stem}_tissue_sensitivity.png"
+        sensitivity_figures[_plot_wavelength] = plot_tissue_sensitivity(
+            prepared_mesh=prepared_mesh,
+            prepared_probe=prepared_probe,
+            jacobian=generated_jacobians[_plot_wavelength]["J"],
+            channel_selection="all",
+            save_directory=_jacobian_path.parent,
+            save_filename=_figure_filename,
+        )
+        sensitivity_paths[_plot_wavelength] = _jacobian_path.parent / _figure_filename
 
+    saved_plot_paths = "\n".join(
+        f"- **{wavelength} nm:** `{sensitivity_paths[wavelength]}`" for wavelength in wavelengths
+    )
+    mo.vstack(
+        [
+            mo.md(
+                f"""
+                ## 9. Plot aggregate tissue sensitivity
 
-@app.cell
-def _():
-    return
+                Each figure averages the Jacobian over the configured channels,
+                displays every active channel pairing, and compares the two
+                opacity mappings on gray matter (tissue ID 2).
 
-
+                {saved_plot_paths}
+                """
+            ),
+            *[sensitivity_figures[wavelength] for wavelength in wavelengths],
+        ]
+    )
+    return sensitivity_figures, sensitivity_paths
 if __name__ == "__main__":
     app.run()

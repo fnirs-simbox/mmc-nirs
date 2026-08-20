@@ -12,9 +12,9 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from mmc_nirs.light_transport.prepare_jacobian_probe import prepare_jacobian_probe  # noqa: E402
-from mmc_nirs.light_transport.probe_utils import load_channel_pairs_from_snirf  # noqa: E402
+from mmc_nirs.light_transport.prepare_probe import prepare_probe  # noqa: E402
 from mmc_nirs.utils.prepared_input_io import resolve_prepared_input_path  # noqa: E402
+from mmc_nirs.utils.probe_utils import load_channel_pairs_from_snirf  # noqa: E402
 
 
 DATA_DIRECTORY = Path(__file__).resolve().parent
@@ -52,7 +52,7 @@ def main() -> None:
     prepared_mesh = load_prepared_mesh(mesh_path)
     channel_pairings = load_channel_pairs_from_snirf(DATA_DIRECTORY / "NIRS-2019-08-10_006.snirf")
 
-    prepare_jacobian_probe(
+    prepare_probe(
         source_positions=source_positions,
         detector_positions=detector_positions,
         prepared_mesh=prepared_mesh,

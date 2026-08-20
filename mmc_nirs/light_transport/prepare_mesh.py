@@ -20,7 +20,7 @@ from mmc_nirs.utils.prepared_input_io import (
 )
 
 
-def prepare_jacobian_mesh(
+def prepare_mesh(
     nodes: ArrayLike,
     elements: ArrayLike,
     element_tissue_ids: ArrayLike,
