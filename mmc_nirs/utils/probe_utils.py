@@ -164,7 +164,7 @@ def as_unit_direction_array(values: ArrayLike, name: str) -> np.ndarray:
     """Return finite three-dimensional unit vectors required by MMC."""
     directions = as_coordinate_array(values, name)
     if not np.all(np.isclose(np.linalg.norm(directions, axis=1), 1.0, rtol=1e-6, atol=1e-8)):
-        raise ValueError(f"{name} must contain unit-length vectors; prepare_jacobian_probe may not have been run")
+        raise ValueError(f"{name} must contain unit-length vectors; prepare_probe may not have been run")
     return directions
 
 
@@ -381,7 +381,7 @@ def _plot_probe_registration(
 
 
 def load_channel_pairs_from_snirf(snirf_file: str | PathLike[str]) -> np.ndarray:
-    """Load source-detector channel pairings from a SNIRF file."""
+    """Load unique source-detector pairings in first-measurement order."""
     with h5py.File(snirf_file, "r") as snirf:
         data_group = snirf["nirs"]["data1"]
         measurement_keys = sorted(
@@ -395,4 +395,6 @@ def load_channel_pairs_from_snirf(snirf_file: str | PathLike[str]) -> np.ndarray
             ]
             for key in measurement_keys
         ]
-    return np.asarray(pairs, dtype=int)
+    pairings = np.asarray(pairs, dtype=int).reshape(-1, 2)
+    _, first_indices = np.unique(pairings, axis=0, return_index=True)
+    return pairings[np.sort(first_indices)]

@@ -9,9 +9,32 @@ from mmc_nirs.utils.jacobian_utils import (
     order_optical_properties,
     save_mmc_mesh,
     select_optical_properties,
+    validate_jacobian,
     validate_mmc_flux,
     validate_mmc_settings,
 )
+
+
+def test_validate_jacobian_accepts_full_source_detector_matrix() -> None:
+    jacobian = np.arange(24, dtype=float).reshape(4, 6)
+
+    validated = validate_jacobian(jacobian, source_count=2, detector_count=2, node_count=6)
+
+    np.testing.assert_array_equal(validated, jacobian)
+
+
+@pytest.mark.parametrize(
+    ("jacobian", "error", "message"),
+    [
+        (np.ones((3, 6)), ValueError, "shape"),
+        (np.full((4, 6), np.nan), ValueError, "non-finite"),
+        (np.full((4, 6), "invalid"), TypeError, "real numeric"),
+        (np.ones((4, 6), dtype=complex), TypeError, "real numeric"),
+    ],
+)
+def test_validate_jacobian_rejects_invalid_values(jacobian, error, message) -> None:
+    with pytest.raises(error, match=message):
+        validate_jacobian(jacobian, source_count=2, detector_count=2, node_count=6)
 
 
 def test_order_optical_properties_uses_configured_tissue_order() -> None:

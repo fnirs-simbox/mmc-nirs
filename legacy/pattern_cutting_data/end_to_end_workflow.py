@@ -17,8 +17,8 @@ def _():
     from mmc_nirs import load_config
     from mmc_nirs.light_transport import (
         prepare_jacobian_inputs,
-        prepare_jacobian_mesh,
-        prepare_jacobian_probe,
+        prepare_mesh,
+        prepare_probe,
     )
     from mmc_nirs.mmc.jacobian import generate_jacobian
     from mmc_nirs.utils.probe_utils import load_channel_pairs_from_snirf
@@ -33,8 +33,8 @@ def _():
         mo,
         np,
         prepare_jacobian_inputs,
-        prepare_jacobian_mesh,
-        prepare_jacobian_probe,
+        prepare_mesh,
+        prepare_probe,
         time,
     )
 
@@ -76,10 +76,10 @@ def _(
     mesh_elements,
     mesh_nodes,
     mesh_tissue_ids,
-    prepare_jacobian_mesh,
+    prepare_mesh,
     rebuild_inputs,
 ):
-    prepared_mesh = prepare_jacobian_mesh(
+    prepared_mesh = prepare_mesh(
         nodes=mesh_nodes,
         elements=mesh_elements,
         element_tissue_ids=mesh_tissue_ids,
@@ -103,12 +103,12 @@ def _(
     channel_pairings,
     detector_positions,
     experiment_config,
-    prepare_jacobian_probe,
+    prepare_probe,
     prepared_mesh,
     rebuild_inputs,
     source_positions,
 ):
-    prepared_probe = prepare_jacobian_probe(
+    prepared_probe = prepare_probe(
         source_positions=source_positions,
         detector_positions=detector_positions,
         prepared_mesh=prepared_mesh,
@@ -257,12 +257,5 @@ def _(jacobian_paths, jacobians, mo, np, runtimes, wavelengths):
         )
     mo.ui.table(result_rows, selection=None, pagination=False)
     return
-
-
-@app.cell
-def _():
-    return
-
-
 if __name__ == "__main__":
     app.run()
