@@ -172,7 +172,6 @@ licensed.
 - `mmc_nirs/registration/` contains the optode-to-head registration routines.
 - `mmc_nirs/utils/` contains lower-level serialization and array helpers.
 - `workflow_example/` contains the current end-to-end Marimo workflow.
-- `legacy/` contains older workflows retained during the ongoing API migration.
 - `mmcnirs-assets/` is the ignored, user-visible default download root created
   at runtime.
 

@@ -212,10 +212,10 @@ tempCodeRunnerFile.py
 # User-visible assets downloaded from Hugging Face
 /mmcnirs-assets/
 
-# Downloaded and generated data for the pain end-to-end example
-/legacy/pain_data/colin27/
-/legacy/pain_data/mmcnirs_outputs/
-/legacy/pattern_cutting_data/mmcnirs_outputs/
+# Legacy workflows and data retained only in local development checkouts
+/legacy/
+
+# Downloaded and generated data for the end-to-end example
 /workflow_example/colin27/
 /workflow_example/e2e-files/
 
