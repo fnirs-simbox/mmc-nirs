@@ -1,11 +1,11 @@
 # Third-Party Notices
 
-The [MIT license](LICENSE) covers the `mmc-nirs` software and integration code.
+The [MIT license](LICENSE) covers the `mmcnirs` software and integration code.
 It does not relicense the external data or MMC runtime described below.
 
 ## Public Hugging Face assets
 
-`mmc-nirs` downloads optional resources from the public
+`mmcnirs` downloads optional resources from the public
 [`nielsbracher/fnirs-simbox-assets`](https://huggingface.co/datasets/nielsbracher/fnirs-simbox-assets)
 dataset. These resources are not included in the Python package and do not have
 one common license:
@@ -30,7 +30,7 @@ and comply with the applicable upstream terms when redistributing an asset.
 ## Mesh-based Monte Carlo (MMC)
 
 [MMC](https://github.com/fangq/mmc) is an optional external program downloaded
-on demand from the Hugging Face dataset. It is not included in the `mmc-nirs`
+on demand from the Hugging Face dataset. It is not included in the `mmcnirs`
 Python package.
 
 Copyright (C) 2010–2025 Qianqian Fang.

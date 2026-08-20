@@ -3,7 +3,7 @@ import json
 import numpy as np
 import pytest
 
-from mmc_nirs.utils.jacobian_utils import (
+from mmcnirs.utils.jacobian_utils import (
     build_jacobian_mmc_config,
     mmc_to_json,
     order_optical_properties,

@@ -14,9 +14,9 @@ from matplotlib.lines import Line2D
 from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
 from numpy.typing import ArrayLike
 
-from mmc_nirs.utils.jacobian_utils import validate_jacobian
-from mmc_nirs.utils.mesh_utils import validate_prepared_mesh
-from mmc_nirs.utils.probe_utils import flatten_channel_pairings, validate_prepared_probe
+from mmcnirs.utils.jacobian_utils import validate_jacobian
+from mmcnirs.utils.mesh_utils import validate_prepared_mesh
+from mmcnirs.utils.probe_utils import flatten_channel_pairings, validate_prepared_probe
 
 
 def plot_tissue_sensitivity(
@@ -245,10 +245,7 @@ def _select_channel_values(
     ):
         channel_index = int(channel_selection)
         if channel_index < 0 or channel_index >= len(configured_pairings):
-            raise ValueError(
-                "channel_selection must be a zero-based index into "
-                "prepared_probe['channel_pairings']"
-            )
+            raise ValueError("channel_selection must be a zero-based index into prepared_probe['channel_pairings']")
         selected_pairing = configured_pairings[[channel_index]]
         source_index, detector_index = selected_pairing[0]
         jacobian_row = source_index * detector_count + detector_index

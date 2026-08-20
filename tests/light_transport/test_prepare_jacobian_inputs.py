@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from mmc_nirs.light_transport.prepare_jacobian_inputs import prepare_jacobian_inputs
+from mmcnirs.light_transport.prepare_jacobian_inputs import prepare_jacobian_inputs
 
 
 @pytest.fixture

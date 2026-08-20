@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from mmc_nirs.loaders import standard_heads
+from mmcnirs.loaders import standard_heads
 
 _FILES = ("README.md", "colin27_mesh.npz", "orientation.txt", "segmentation_map.npz")
 

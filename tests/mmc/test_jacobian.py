@@ -5,8 +5,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import mmc_nirs.mmc.jacobian as jacobian_module
-from mmc_nirs.mmc.jacobian import generate_jacobian
+import mmcnirs.mmc.jacobian as jacobian_module
+from mmcnirs.mmc.jacobian import generate_jacobian
 
 _HISTORY_HEADER = struct.Struct("<4s7IfIfi4I")
 _RESULT_KEYS = {

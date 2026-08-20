@@ -13,11 +13,11 @@ from typing import Any
 import numpy as np
 from numpy.typing import ArrayLike
 
-from mmc_nirs.light_transport.prepare_jacobian_inputs import prepare_jacobian_inputs
-from mmc_nirs.mmc.history import read_cli_output, read_flux
-from mmc_nirs.mmc.photons import compute_detected_photon_weights
-from mmc_nirs.mmc.runner import run_mmc
-from mmc_nirs.utils.jacobian_utils import (
+from mmcnirs.light_transport.prepare_jacobian_inputs import prepare_jacobian_inputs
+from mmcnirs.mmc.history import read_cli_output, read_flux
+from mmcnirs.mmc.photons import compute_detected_photon_weights
+from mmcnirs.mmc.runner import run_mmc
+from mmcnirs.utils.jacobian_utils import (
     JACOBIAN_TSTEP_SECONDS,
     build_jacobian_mmc_config,
     load_jacobian_result,
@@ -143,7 +143,7 @@ def generate_jacobian(
     green_source_detector = np.zeros((row_count, 1), dtype=float)
     measurements_zero = np.zeros((row_count, 1), dtype=float)
 
-    with TemporaryDirectory(prefix="mmc-nirs-jacobian-") as temporary_directory_name:
+    with TemporaryDirectory(prefix="mmcnirs-jacobian-") as temporary_directory_name:
         temporary_directory = Path(temporary_directory_name)
 
         for source_index in range(source_count):

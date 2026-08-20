@@ -1,4 +1,4 @@
-from mmc_nirs.utils.mesh_utils import make_orientation_matrices
+from mmcnirs.utils.mesh_utils import make_orientation_matrices
 
 from .prepare_jacobian_inputs import JacobianInputs, prepare_jacobian_inputs
 from .prepare_mesh import prepare_mesh

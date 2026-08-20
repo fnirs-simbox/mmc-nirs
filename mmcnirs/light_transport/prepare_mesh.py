@@ -6,14 +6,14 @@ from typing import Any
 import numpy as np
 from numpy.typing import ArrayLike
 
-from mmc_nirs.utils.mesh_utils import (
+from mmcnirs.utils.mesh_utils import (
     PREPARED_MESH_KEYS,
     as_coordinate_array,
     as_element_array,
     as_element_tissue_id_array,
     validate_mesh_settings,
 )
-from mmc_nirs.utils.prepared_input_io import (
+from mmcnirs.utils.prepared_input_io import (
     load_npz_archive,
     resolve_prepared_input_path,
     save_npz_archive,

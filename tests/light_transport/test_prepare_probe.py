@@ -3,11 +3,11 @@ import importlib
 import numpy as np
 import pytest
 
-from mmc_nirs.light_transport.prepare_mesh import prepare_mesh
-from mmc_nirs.loaders import load_light_transport_results
+from mmcnirs.light_transport.prepare_mesh import prepare_mesh
+from mmcnirs.loaders import load_light_transport_results
 
-probe_module = importlib.import_module("mmc_nirs.light_transport.prepare_probe")
-probe_utils_module = importlib.import_module("mmc_nirs.utils.probe_utils")
+probe_module = importlib.import_module("mmcnirs.light_transport.prepare_probe")
+probe_utils_module = importlib.import_module("mmcnirs.utils.probe_utils")
 prepare_probe = probe_module.prepare_probe
 
 

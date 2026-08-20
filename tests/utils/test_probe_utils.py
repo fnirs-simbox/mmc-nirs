@@ -2,7 +2,7 @@ import h5py
 import numpy as np
 import pytest
 
-from mmc_nirs.utils.probe_utils import (
+from mmcnirs.utils.probe_utils import (
     as_channel_pairing_array,
     as_unit_direction_array,
     flatten_channel_pairings,

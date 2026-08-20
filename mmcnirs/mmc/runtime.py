@@ -15,7 +15,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from mmc_nirs.loaders.hf_loader import download_hf_resource
+from mmcnirs.loaders.hf_loader import download_hf_resource
 
 __all__ = ["get_mmc_executable"]
 
@@ -51,20 +51,20 @@ def _detect_platform() -> str:
 
 
 def _user_cache_directory(platform_key: str) -> Path:
-    override = os.environ.get("MMC_NIRS_CACHE_DIR")
+    override = os.environ.get("MMCNIRS_CACHE_DIR")
     if override:
         return Path(override).expanduser()
 
     if platform_key.startswith("windows-"):
         cache_base = os.environ.get("LOCALAPPDATA")
         if cache_base:
-            return Path(cache_base) / "mmc-nirs" / "Cache"
-        return Path.home() / "AppData" / "Local" / "mmc-nirs" / "Cache"
+            return Path(cache_base) / "mmcnirs" / "Cache"
+        return Path.home() / "AppData" / "Local" / "mmcnirs" / "Cache"
     if platform_key.startswith("macos-"):
-        return Path.home() / "Library" / "Caches" / "mmc-nirs"
+        return Path.home() / "Library" / "Caches" / "mmcnirs"
 
     cache_base = os.environ.get("XDG_CACHE_HOME")
-    return (Path(cache_base).expanduser() if cache_base else Path.home() / ".cache") / "mmc-nirs"
+    return (Path(cache_base).expanduser() if cache_base else Path.home() / ".cache") / "mmcnirs"
 
 
 def _executable_path(cache_directory: Path, platform_key: str) -> Path:

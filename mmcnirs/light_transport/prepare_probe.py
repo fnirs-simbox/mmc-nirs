@@ -7,13 +7,13 @@ from typing import Any
 import numpy as np
 from numpy.typing import ArrayLike
 
-from mmc_nirs.utils.mesh_utils import validate_prepared_mesh
-from mmc_nirs.utils.prepared_input_io import (
+from mmcnirs.utils.mesh_utils import validate_prepared_mesh
+from mmcnirs.utils.prepared_input_io import (
     load_npz_archive,
     resolve_prepared_input_path,
     save_npz_archive,
 )
-from mmc_nirs.utils.probe_utils import (
+from mmcnirs.utils.probe_utils import (
     PREPARED_PROBE_KEYS,
     _plot_probe_registration,
     as_channel_pairing_array,

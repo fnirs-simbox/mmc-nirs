@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from mmc_nirs.mmc.photons import compute_detected_photon_weights
+from mmcnirs.mmc.photons import compute_detected_photon_weights
 
 
 @pytest.fixture

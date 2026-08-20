@@ -9,14 +9,14 @@ import numpy as np
 import trimesh
 from numpy.typing import ArrayLike
 
-from mmc_nirs.utils.mesh_utils import (
+from mmcnirs.utils.mesh_utils import (
     _find_containing_elements,
     as_coordinate_array,
     as_element_array,
     make_orientation_matrices,
     make_surface_mesh,
 )
-from mmc_nirs.utils.prepared_input_io import require_config_section, require_fields
+from mmcnirs.utils.prepared_input_io import require_config_section, require_fields
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure

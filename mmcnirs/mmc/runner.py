@@ -7,7 +7,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from mmc_nirs.mmc import runtime
+from mmcnirs.mmc import runtime
 
 __all__ = ["run_mmc"]
 

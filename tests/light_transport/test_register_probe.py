@@ -2,10 +2,10 @@ import importlib
 
 import numpy as np
 
-from mmc_nirs.light_transport import find_optode_directions, make_orientation_matrices
-from mmc_nirs.utils.mesh_utils import make_orientation_matrices as mesh_orientation_matrices
+from mmcnirs.light_transport import find_optode_directions, make_orientation_matrices
+from mmcnirs.utils.mesh_utils import make_orientation_matrices as mesh_orientation_matrices
 
-register_module = importlib.import_module("mmc_nirs.light_transport.register_probe")
+register_module = importlib.import_module("mmcnirs.light_transport.register_probe")
 
 
 def test_light_transport_reexports_orientation_matrices() -> None:

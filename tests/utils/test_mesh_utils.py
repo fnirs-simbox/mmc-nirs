@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from mmc_nirs.utils.mesh_utils import (
+from mmcnirs.utils.mesh_utils import (
     _find_containing_elements,
     as_coordinate_array,
     as_element_array,

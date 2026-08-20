@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from mmc_nirs.loaders import hf_loader
+from mmcnirs.loaders import hf_loader
 
 
 def _write_required_files(directory: Path, category: str, keyword: str, *, omit: str | None = None) -> None:

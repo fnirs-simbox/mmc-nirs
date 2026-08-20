@@ -5,7 +5,7 @@ import trimesh
 from numpy.typing import ArrayLike
 from scipy.optimize import minimize
 
-from mmc_nirs.utils.mesh_utils import (
+from mmcnirs.utils.mesh_utils import (
     _find_containing_elements,
     as_coordinate_array,
     as_element_array,

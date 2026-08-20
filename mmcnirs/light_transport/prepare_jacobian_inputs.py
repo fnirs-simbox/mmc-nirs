@@ -9,13 +9,13 @@ from typing import Any
 import numpy as np
 from numpy.typing import ArrayLike
 
-from mmc_nirs.utils.jacobian_utils import select_optical_properties, validate_mmc_settings
-from mmc_nirs.utils.mesh_utils import (
+from mmcnirs.utils.jacobian_utils import select_optical_properties, validate_mmc_settings
+from mmcnirs.utils.mesh_utils import (
     find_closest_nodes,
     validate_prepared_mesh,
     validate_tissue_property_coverage,
 )
-from mmc_nirs.utils.probe_utils import flatten_channel_pairings, validate_prepared_probe
+from mmcnirs.utils.probe_utils import flatten_channel_pairings, validate_prepared_probe
 
 
 @dataclass(frozen=True)

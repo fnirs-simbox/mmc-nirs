@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from mmc_nirs.mmc import runner
+from mmcnirs.mmc import runner
 
 
 def test_run_mmc_executes_managed_runtime_and_returns_output(tmp_path: Path, monkeypatch) -> None:

@@ -22,16 +22,16 @@ def _():
     import numpy as np
     from scipy.io import loadmat
 
-    from mmc_nirs import load_config, load_standard_head
-    from mmc_nirs.loaders.hf_loader import download_hf_resource
-    from mmc_nirs.light_transport import (
+    from mmcnirs import load_config, load_standard_head
+    from mmcnirs.loaders.hf_loader import download_hf_resource
+    from mmcnirs.light_transport import (
         prepare_jacobian_inputs,
         prepare_mesh,
         prepare_probe,
     )
-    from mmc_nirs.mmc.jacobian import generate_jacobian
-    from mmc_nirs.utils.plot_jacobians import plot_tissue_sensitivity
-    from mmc_nirs.utils.probe_utils import load_channel_pairs_from_snirf
+    from mmcnirs.mmc.jacobian import generate_jacobian
+    from mmcnirs.utils.plot_jacobians import plot_tissue_sensitivity
+    from mmcnirs.utils.probe_utils import load_channel_pairs_from_snirf
 
     return (
         Path,
@@ -62,7 +62,7 @@ def _(mo):
     input files through a prepared head mesh, a registered probe, validated
     wavelength-specific MMC inputs, and generated Jacobians. Its purpose is
     both practical and diagnostic: it demonstrates how the core
-    `mmc_nirs.light_transport` functions work together and helps expose any
+    `mmcnirs.light_transport` functions work together and helps expose any
     information or API steps still missing from the package.
 
     The workflow uses a Colin27 standard head, a MATLAB `probe.SD` file,
@@ -670,5 +670,7 @@ def _(
         ]
     )
     return sensitivity_figures, sensitivity_paths
+
+
 if __name__ == "__main__":
     app.run()

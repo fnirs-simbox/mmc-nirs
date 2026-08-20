@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from mmc_nirs.light_transport.prepare_mesh import prepare_mesh
+from mmcnirs.light_transport.prepare_mesh import prepare_mesh
 
 
 @pytest.fixture

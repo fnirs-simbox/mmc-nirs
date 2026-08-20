@@ -7,7 +7,7 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 
-from mmc_nirs.utils.plot_jacobians import _select_channel_values, plot_tissue_sensitivity
+from mmcnirs.utils.plot_jacobians import _select_channel_values, plot_tissue_sensitivity
 
 
 @pytest.fixture

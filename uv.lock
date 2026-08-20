@@ -987,7 +987,7 @@ wheels = [
 ]
 
 [[package]]
-name = "mmc-nirs"
+name = "mmcnirs"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
@@ -1031,7 +1031,7 @@ requires-dist = [
     { name = "huggingface-hub", specifier = ">=1.27.0" },
     { name = "marimo", marker = "extra == 'dev'", specifier = ">=0.24.0" },
     { name = "matplotlib", specifier = ">=3.10.8" },
-    { name = "mmc-nirs", extras = ["dev", "test"], marker = "extra == 'all'", editable = "." },
+    { name = "mmcnirs", extras = ["dev", "test"], marker = "extra == 'all'", editable = "." },
     { name = "numpy", specifier = ">=2.2.6" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.5.1" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.2" },

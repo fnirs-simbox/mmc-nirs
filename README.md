@@ -1,6 +1,6 @@
-# mmc-nirs
+# mmcnirs
 
-`mmc-nirs` provides light-transport preparation, execution, and loading tools
+`mmcnirs` provides light-transport preparation, execution, and loading tools
 for [SimNIRS](https://github.com/fnirs-simbox/simnirs). It prepares head meshes
 and fNIRS probes, runs [MMC](https://github.com/fangq/mmc) (Mesh-based Monte
 Carlo) to generate Jacobians, and loads precomputed results for downstream
@@ -11,7 +11,7 @@ bundled in the Python package. They are downloaded anonymously from the public
 [`nielsbracher/fnirs-simbox-assets`](https://huggingface.co/datasets/nielsbracher/fnirs-simbox-assets)
 Hugging Face dataset when needed.
 
-> **Status:** `mmc-nirs` is pre-alpha software. APIs and data formats may still
+> **Status:** `mmcnirs` is pre-alpha software. APIs and data formats may still
 > change before the first stable release.
 
 ## What is MMC?
@@ -23,7 +23,7 @@ to build synthetic fNIRS data.
 
 ## Installation
 
-`mmc-nirs` requires Python 3.12–3.14. Install it from a local checkout:
+`mmcnirs` requires Python 3.12–3.14. Install it from a local checkout:
 
 ```bash
 python -m pip install .
@@ -42,7 +42,7 @@ Two precomputed example experiments are currently available: `pain` and
 `pattern_cutting`.
 
 ```python
-from mmc_nirs import load_default_config, load_light_transport_results
+from mmcnirs import load_default_config, load_light_transport_results
 
 config = load_default_config("pain")
 light_transport_results = load_light_transport_results(config)
@@ -73,7 +73,7 @@ optional relative `experiment_dir` in the configuration is resolved from that
 same location.
 
 ```python
-from mmc_nirs import load_config, load_light_transport_results
+from mmcnirs import load_config, load_light_transport_results
 
 config = load_config("/path/to/experiment/config.json")
 light_transport_results = load_light_transport_results(config)
@@ -86,7 +86,7 @@ Pass `use_jacobian=False` to load only the mesh and registered probe data.
 The current standard-head catalog contains `colin27`:
 
 ```python
-from mmc_nirs import load_standard_head
+from mmcnirs import load_standard_head
 
 standard_head_directory = load_standard_head("colin27")
 ```
@@ -113,7 +113,7 @@ cache.
 ## Hugging Face connection
 
 All Hugging Face access is centralized in
-[`mmc_nirs/loaders/hf_loader.py`](mmc_nirs/loaders/hf_loader.py). The connection
+[`mmcnirs/loaders/hf_loader.py`](mmcnirs/loaders/hf_loader.py). The connection
 uses the public dataset's `main` branch and explicitly disables authentication;
 neither callers nor users need to supply an HF token.
 
@@ -130,7 +130,7 @@ Higher-level loaders pass a category and keyword to this connection point:
 The catalog can be inspected programmatically:
 
 ```python
-from mmc_nirs.loaders import HF_RESOURCE_KEYWORDS, download_hf_resource
+from mmcnirs.loaders import HF_RESOURCE_KEYWORDS, download_hf_resource
 
 print(HF_RESOURCE_KEYWORDS)
 workflow_inputs = download_hf_resource("workflow", "e2e-files")
@@ -145,15 +145,15 @@ data and can be recreated.
 The MMC runtime is intentionally separate from `mmcnirs-assets`. It is installed
 under the platform's managed user cache:
 
-- Linux: `$XDG_CACHE_HOME/mmc-nirs`, or `~/.cache/mmc-nirs`
-- macOS: `~/Library/Caches/mmc-nirs`
-- Windows: `%LOCALAPPDATA%\mmc-nirs\Cache`
+- Linux: `$XDG_CACHE_HOME/mmcnirs`, or `~/.cache/mmcnirs`
+- macOS: `~/Library/Caches/mmcnirs`
+- Windows: `%LOCALAPPDATA%\mmcnirs\Cache`
 
-Set `MMC_NIRS_CACHE_DIR` to override the runtime cache location.
+Set `MMCNIRS_CACHE_DIR` to override the runtime cache location.
 
 ### Licensing
 
-The [MIT license](LICENSE) covers the `mmc-nirs` software, not the data or MMC
+The [MIT license](LICENSE) covers the `mmcnirs` software, not the data or MMC
 runtime downloaded from Hugging Face. See
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for a concise license map.
 
@@ -164,13 +164,12 @@ licensed.
 
 ## Repository layout
 
-- `mmc_nirs/loaders/` contains configuration, standard-head, result, and Hugging
+- `mmcnirs/loaders/` contains configuration, standard-head, result, and Hugging
   Face loaders.
-- `mmc_nirs/light_transport/` prepares meshes, registers probes, and validates
+- `mmcnirs/light_transport/` prepares meshes, registers probes, and validates
   wavelength-specific Jacobian inputs.
-- `mmc_nirs/mmc/` manages the external MMC runtime and generates Jacobians.
-- `mmc_nirs/registration/` contains the optode-to-head registration routines.
-- `mmc_nirs/utils/` contains lower-level serialization and array helpers.
+- `mmcnirs/mmc/` manages the external MMC runtime and generates Jacobians.
+- `mmcnirs/utils/` contains lower-level serialization and array helpers.
 - `workflow_example/` contains the current end-to-end Marimo workflow.
 - `mmcnirs-assets/` is the ignored, user-visible default download root created
   at runtime.

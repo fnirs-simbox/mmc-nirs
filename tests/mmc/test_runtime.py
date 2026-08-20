@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from mmc_nirs.mmc import runtime
+from mmcnirs.mmc import runtime
 
 
 def _make_downloads(tmp_path: Path, platform_key: str, executable_path: str) -> tuple[Path, Path, str]:
@@ -38,7 +38,7 @@ def _make_downloads(tmp_path: Path, platform_key: str, executable_path: str) -> 
 def _configure_runtime(tmp_path: Path, monkeypatch, system: str, machine: str) -> None:
     monkeypatch.setattr(runtime.platform, "system", lambda: system)
     monkeypatch.setattr(runtime.platform, "machine", lambda: machine)
-    monkeypatch.setenv("MMC_NIRS_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("MMCNIRS_CACHE_DIR", str(tmp_path / "cache"))
 
 
 @pytest.mark.parametrize(

@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from mmc_nirs import load_config, load_light_transport_results
+from mmcnirs import load_config, load_light_transport_results
 
 
 @pytest.fixture

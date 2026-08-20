@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from mmc_nirs import load_config, load_default_config
+from mmcnirs import load_config, load_default_config
 
 
 def test_load_config_returns_bundled_experiment(tmp_path, monkeypatch) -> None:
@@ -19,7 +19,7 @@ def test_load_config_returns_bundled_experiment(tmp_path, monkeypatch) -> None:
         calls.append((category, keyword, kwargs))
         return experiment_directory
 
-    monkeypatch.setattr("mmc_nirs.loaders.config.download_hf_resource", fake_download)
+    monkeypatch.setattr("mmcnirs.loaders.config.download_hf_resource", fake_download)
 
     config = load_default_config("pain", assets_root=assets_root)
 
