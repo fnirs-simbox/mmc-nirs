@@ -3,7 +3,7 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mmc-nirs"
+name = "mmcnirs"
 version = "0.1.0"
 authors = [
   { name = "Stefan T. Radev" },
@@ -13,7 +13,7 @@ authors = [
 description = "Precomputed MMC forward models and loading tools for SimNIRS"
 readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 requires-python = ">=3.12, <3.15"
 keywords = ["fnirs", "monte-carlo", "neuroimaging", "photon-transport", "simulation"]
 classifiers = [
@@ -29,9 +29,10 @@ classifiers = [
   "Topic :: Scientific/Engineering",
 ]
 dependencies = [
+  "h5py>=3.14",
+  "huggingface-hub>=1.27.0",
   "matplotlib>=3.10.8",
   "numpy>=2.2.6",
-  "pmmc>=0.3.10",
   "scipy>=1.15.3",
   "trimesh>=4.8.3",
 ]
@@ -40,23 +41,21 @@ dependencies = [
 dev = [
   "build>=1.3.0",
   "check-wheel-contents>=0.6.3",
+  "marimo>=0.24.0",
   "pre-commit>=4.5.1",
   "ruff>=0.14.13",
-  "tox>=4.34.1",
   "twine>=6.2.0",
 ]
 test = [
   "pytest>=9.0.2",
   "pytest-cov>=7.0.0",
-  "pytest-rerunfailures>=16.1",
-  "pytest-xdist>=3.8.0",
 ]
-all = ["mmc-nirs[dev,test]"]
+all = ["mmcnirs[dev,test]"]
 
 [project.urls]
-Homepage = "https://github.com/fnirs-simbox/mmc-nirs"
-Repository = "https://github.com/fnirs-simbox/mmc-nirs.git"
-Issues = "https://github.com/fnirs-simbox/mmc-nirs/issues"
+Homepage = "https://github.com/fnirs-simbox/mmcnirs"
+Repository = "https://github.com/fnirs-simbox/mmcnirs.git"
+Issues = "https://github.com/fnirs-simbox/mmcnirs/issues"
 
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers"
@@ -64,7 +63,7 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 branch = true
-source = ["mmc_nirs"]
+source = ["mmcnirs"]
 
 [tool.coverage.report]
 show_missing = true
@@ -95,6 +94,7 @@ exclude = [
   "buck-out",
   "build",
   "dist",
+  "legacy",
   "node_modules",
   "site-packages",
   "venv",
@@ -128,18 +128,11 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["mmc_nirs*"]
+include = ["mmcnirs*"]
 namespaces = false
-
-[tool.setuptools.package-data]
-"mmc_nirs.experiments.pain" = [
-  "*.json",
-  "*.npy",
-  "*.npz",
-]
 
 [tool.check-wheel-contents]
 ignore = ["W002"]
 
 [tool.uv.sources]
-mmc-nirs = { workspace = true }
+mmcnirs = { workspace = true }
