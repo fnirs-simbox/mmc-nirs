@@ -79,7 +79,8 @@ config = load_config("/path/to/experiment/config.json")
 light_transport_results = load_light_transport_results(config)
 ```
 
-Pass `use_jacobian=False` to load only the mesh and registered probe data.
+The loader returns canonical mesh, probe, Jacobian, and segmentation-map
+dictionaries for SimNIRS.
 
 ## Load a standard head
 
