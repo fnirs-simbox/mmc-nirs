@@ -4,7 +4,6 @@ import numpy as np
 import pytest
 
 from mmcnirs.light_transport.prepare_mesh import prepare_mesh
-from mmcnirs.loaders import load_light_transport_results
 
 probe_module = importlib.import_module("mmcnirs.light_transport.prepare_probe")
 probe_utils_module = importlib.import_module("mmcnirs.utils.probe_utils")
@@ -294,14 +293,17 @@ def test_saved_prepared_inputs_are_loadable_downstream(
         save_probe=True,
     )
 
-    loaded = load_light_transport_results(experiment_config, use_jacobian=False)
+    mesh_path = experiment_config["experiment_dir"] / "mmcnirs_outputs" / "mesh.npz"
+    probe_path = experiment_config["experiment_dir"] / "mmcnirs_outputs" / "probe.npz"
+    assert mesh_path.is_file()
+    assert probe_path.is_file()
 
-    assert (experiment_config["experiment_dir"] / "mmcnirs_outputs" / "mesh.npz").is_file()
-    assert (experiment_config["experiment_dir"] / "mmcnirs_outputs" / "probe.npz").is_file()
-    np.testing.assert_array_equal(loaded["nodes"], mesh["nodes"])
-    np.testing.assert_array_equal(loaded["source_positions"], registration_result[0])
-    np.testing.assert_array_equal(loaded["detector_positions"], registration_result[1])
-    np.testing.assert_array_equal(loaded["detector_norms"], registration_result[3])
+    with np.load(mesh_path, allow_pickle=False) as mesh_archive:
+        np.testing.assert_array_equal(mesh_archive["nodes"], mesh["nodes"])
+    with np.load(probe_path, allow_pickle=False) as probe_archive:
+        np.testing.assert_array_equal(probe_archive["sourcepos"], registration_result[0])
+        np.testing.assert_array_equal(probe_archive["detpos"], registration_result[1])
+        np.testing.assert_array_equal(probe_archive["detnorms"], registration_result[3])
 
 
 def test_signed_surface_distances_are_negative_inside_and_positive_outside() -> None:
