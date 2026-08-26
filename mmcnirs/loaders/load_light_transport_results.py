@@ -11,6 +11,7 @@ import numpy as np
 _MESH_FIELDS = (
     "nodes",
     "elements",
+    "node_tissue_ids",
     "element_tissue_ids",
     "ordered_tissue_ids",
     "ordered_tissues",

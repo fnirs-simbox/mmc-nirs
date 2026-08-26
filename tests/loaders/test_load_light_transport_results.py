@@ -10,6 +10,7 @@ from mmcnirs import load_config, load_light_transport_results
 MESH_FIELDS = {
     "nodes",
     "elements",
+    "node_tissue_ids",
     "element_tissue_ids",
     "ordered_tissue_ids",
     "ordered_tissues",
@@ -38,6 +39,7 @@ def experiment_config_path(tmp_path: Path) -> Path:
         output_directory / "mesh.npz",
         nodes=np.arange(12, dtype=float).reshape(4, 3),
         elements=np.array([[0, 1, 2, 3]]),
+        node_tissue_ids=np.array([0, 1, 1, 1]),
         element_tissue_ids=np.array([1]),
         ordered_tissue_ids=np.array([0, 1]),
         ordered_tissues=np.array(["ambient_air", "gray_matter"]),
@@ -102,6 +104,7 @@ def test_load_light_transport_results_returns_canonical_inputs(experiment_config
     assert all(type(wavelength) is int for wavelength in data["jacobians"])
 
     np.testing.assert_array_equal(data["mesh"]["elements"], [[0, 1, 2, 3]])
+    np.testing.assert_array_equal(data["mesh"]["node_tissue_ids"], [0, 1, 1, 1])
     np.testing.assert_array_equal(data["mesh"]["ordered_tissues"], ["ambient_air", "gray_matter"])
     np.testing.assert_array_equal(data["probe"]["channel_pairings"], [[0, 1], [1, 1], [1, 2]])
     np.testing.assert_array_equal(data["probe"]["short_separation_indices"], [0])
