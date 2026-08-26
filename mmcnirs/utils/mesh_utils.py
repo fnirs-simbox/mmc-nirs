@@ -1,6 +1,7 @@
 """Shared validation and geometry helpers for tetrahedral meshes."""
 
 import itertools
+import warnings
 from collections.abc import Mapping
 from numbers import Integral
 from typing import Any, Literal
@@ -14,6 +15,7 @@ from .prepared_input_io import require_config_section, require_fields
 PREPARED_MESH_KEYS = {
     "nodes",
     "elements",
+    "node_tissue_ids",
     "element_tissue_ids",
     "ordered_tissue_ids",
     "ordered_tissues",
@@ -141,6 +143,91 @@ def as_element_tissue_id_array(
     return tissues.astype(np.intp, copy=True)
 
 
+def as_node_tissue_id_array(
+    values: ArrayLike,
+    number_of_nodes: int,
+    name: str = "node_tissue_ids",
+) -> np.ndarray:
+    """Return one validated integer tissue ID per mesh node."""
+    tissues = np.asarray(values)
+    if tissues.shape != (number_of_nodes,):
+        raise ValueError(f"{name} must contain one value per node")
+    if not np.issubdtype(tissues.dtype, np.integer):
+        if not np.all(np.isfinite(tissues)) or not np.all(tissues == np.floor(tissues)):
+            raise ValueError(f"{name} must contain integer IDs")
+    return tissues.astype(np.intp, copy=True)
+
+
+def repair_node_tissue_ids(
+    nodes: np.ndarray,
+    elements: np.ndarray,
+    node_tissue_ids: np.ndarray,
+    ordered_tissue_ids: np.ndarray,
+) -> np.ndarray:
+    """Replace unrepresented node tissue IDs with nearest valid neighbor labels.
+
+    Directly connected, originally valid-labeled nodes are preferred. If an
+    invalid node has no such mesh neighbor, the nearest originally valid node
+    in the whole mesh is used. Replacements are simultaneous, and equal-distance
+    ties are resolved using the lowest node index.
+    """
+    valid_label_mask = np.isin(node_tissue_ids, ordered_tissue_ids)
+    invalid_node_ids = np.flatnonzero(~valid_label_mask)
+    if invalid_node_ids.size == 0:
+        return node_tissue_ids.copy()
+
+    valid_node_ids = np.flatnonzero(valid_label_mask)
+    if valid_node_ids.size == 0:
+        raise ValueError("node_tissue_ids contains no IDs represented by ordered_tissues")
+
+    edge_columns = np.asarray(list(itertools.combinations(range(4), 2)), dtype=np.intp)
+    mesh_edges = np.unique(np.sort(elements[:, edge_columns].reshape(-1, 2), axis=1), axis=0)
+    edge_distances = np.linalg.norm(nodes[mesh_edges[:, 0]] - nodes[mesh_edges[:, 1]], axis=1)
+    mean_edge_distance = float(np.mean(edge_distances))
+
+    repaired_tissue_ids = node_tissue_ids.copy()
+    repair_rows: list[tuple[int, int, float, int, int]] = []
+    for node_id in invalid_node_ids:
+        incident_edges = mesh_edges[np.any(mesh_edges == node_id, axis=1)]
+        connected_node_ids = np.unique(incident_edges[incident_edges != node_id])
+        candidate_node_ids = connected_node_ids[valid_label_mask[connected_node_ids]]
+        if candidate_node_ids.size == 0:
+            candidate_node_ids = valid_node_ids
+
+        distances = np.linalg.norm(nodes[candidate_node_ids] - nodes[node_id], axis=1)
+        nearest_order = np.lexsort((candidate_node_ids, distances))
+        nearest_offset = nearest_order[0]
+        nearest_node_id = int(candidate_node_ids[nearest_offset])
+        distance = float(distances[nearest_offset])
+        old_label = int(node_tissue_ids[node_id])
+        new_label = int(node_tissue_ids[nearest_node_id])
+        repaired_tissue_ids[node_id] = new_label
+        repair_rows.append((int(node_id), nearest_node_id, distance, old_label, new_label))
+
+    summary_lines = [
+        "Reassigned node tissue IDs using nearest originally valid-labeled nodes "
+        f"(mesh mean edge distance: {mean_edge_distance:.6f} mm):",
+        "node_id nearest_neighbor_id distance_mm old_label new_label",
+    ]
+    summary_lines.extend(
+        f"{node_id} {nearest_node_id} {distance:.6f} {old_label} {new_label}"
+        for node_id, nearest_node_id, distance, old_label, new_label in repair_rows
+    )
+    warnings.warn("\n".join(summary_lines), UserWarning, stacklevel=2)
+
+    distant_repairs = [row for row in repair_rows if row[2] > mean_edge_distance]
+    if distant_repairs:
+        distant_node_ids = [row[0] for row in distant_repairs]
+        warnings.warn(
+            "Nearest-neighbor tissue-label distance exceeds the mesh mean edge distance "
+            f"({mean_edge_distance:.6f} mm) for node IDs: {distant_node_ids}",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    return repaired_tissue_ids
+
+
 def validate_prepared_mesh(prepared_mesh: Mapping[str, ArrayLike]) -> dict[str, np.ndarray]:
     """Validate and copy the canonical arrays in a prepared mesh mapping."""
     if not isinstance(prepared_mesh, Mapping):
@@ -155,7 +242,12 @@ def validate_prepared_mesh(prepared_mesh: Mapping[str, ArrayLike]) -> dict[str, 
         allow_extra_columns=False,
         index_base="zero",
     )
-    tissue_ids = as_element_tissue_id_array(
+    node_tissue_ids = as_node_tissue_id_array(
+        prepared_mesh["node_tissue_ids"],
+        len(nodes),
+        "prepared_mesh['node_tissue_ids']",
+    )
+    element_tissue_ids = as_element_tissue_id_array(
         prepared_mesh["element_tissue_ids"],
         len(elements),
         "prepared_mesh['element_tissue_ids']",
@@ -165,16 +257,23 @@ def validate_prepared_mesh(prepared_mesh: Mapping[str, ArrayLike]) -> dict[str, 
         prepared_mesh["ordered_tissues"],
     )
     ordered_tissue_ids, ordered_tissues = ordered_tissue_arrays(tissue_mapping)
-    unknown_ids = np.setdiff1d(np.unique(tissue_ids), ordered_tissue_ids)
-    if unknown_ids.size:
+    unknown_node_ids = np.setdiff1d(np.unique(node_tissue_ids), ordered_tissue_ids)
+    if unknown_node_ids.size:
+        raise ValueError(
+            "prepared_mesh['node_tissue_ids'] contains IDs not represented by ordered_tissues: "
+            f"{unknown_node_ids.tolist()}"
+        )
+    unknown_element_ids = np.setdiff1d(np.unique(element_tissue_ids), ordered_tissue_ids)
+    if unknown_element_ids.size:
         raise ValueError(
             "prepared_mesh['element_tissue_ids'] contains IDs not represented by ordered_tissues: "
-            f"{unknown_ids.tolist()}"
+            f"{unknown_element_ids.tolist()}"
         )
     return {
         "nodes": nodes,
         "elements": elements,
-        "element_tissue_ids": tissue_ids,
+        "node_tissue_ids": node_tissue_ids,
+        "element_tissue_ids": element_tissue_ids,
         "ordered_tissue_ids": ordered_tissue_ids,
         "ordered_tissues": ordered_tissues,
     }

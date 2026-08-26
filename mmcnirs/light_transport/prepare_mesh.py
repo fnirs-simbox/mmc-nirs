@@ -11,6 +11,8 @@ from mmcnirs.utils.mesh_utils import (
     as_coordinate_array,
     as_element_array,
     as_element_tissue_id_array,
+    as_node_tissue_id_array,
+    repair_node_tissue_ids,
     validate_mesh_settings,
 )
 from mmcnirs.utils.prepared_input_io import (
@@ -24,6 +26,7 @@ def prepare_mesh(
     nodes: ArrayLike,
     elements: ArrayLike,
     element_tissue_ids: ArrayLike,
+    node_tissue_ids: ArrayLike,
     experiment_config: Mapping[str, Any],
     save_mesh: bool = True,
     overwrite: bool = False,
@@ -31,8 +34,9 @@ def prepare_mesh(
     """Normalize a tetrahedral head mesh for Jacobian generation.
 
     Coordinates are converted to millimetres and reoriented to RAS. Element
-    indices are saved zero-based. Element tissue IDs are positional MMC medium
-    IDs declared by ``experiment_config["mesh_settings"]["ordered_tissues"]``.
+    indices are saved zero-based. Node and element tissue IDs are positional
+    MMC medium IDs declared by
+    ``experiment_config["mesh_settings"]["ordered_tissues"]``.
 
     Parameters
     ----------
@@ -42,6 +46,10 @@ def prepare_mesh(
         Zero- or one-based tetrahedral node indices.
     element_tissue_ids : array-like, shape (n_elements,)
         Positional MMC medium ID for each tetrahedral element.
+    node_tissue_ids : array-like, shape (n_nodes,)
+        Positional tissue ID for each mesh node. IDs absent from
+        ``ordered_tissues`` are replaced using the nearest originally valid
+        mesh-neighbor label and reported in a warning.
     experiment_config : mapping
         Experiment configuration containing:
 
@@ -71,17 +79,26 @@ def prepare_mesh(
     node_array = as_coordinate_array(nodes, "nodes")
     element_array = as_element_array(elements, len(node_array), "elements", allow_extra_columns=False)
 
-    tissue_id_array = as_element_tissue_id_array(element_tissue_ids, len(element_array))
-    unknown_ids = np.setdiff1d(np.unique(tissue_id_array), mesh_settings["ordered_tissue_ids"])
-    if unknown_ids.size:
-        raise ValueError(f"element_tissue_ids contains IDs not represented by ordered_tissues: {unknown_ids.tolist()}")
+    element_tissue_id_array = as_element_tissue_id_array(element_tissue_ids, len(element_array))
+    unknown_element_ids = np.setdiff1d(np.unique(element_tissue_id_array), mesh_settings["ordered_tissue_ids"])
+    if unknown_element_ids.size:
+        raise ValueError(
+            f"element_tissue_ids contains IDs not represented by ordered_tissues: {unknown_element_ids.tolist()}"
+        )
 
     ras_nodes = node_array * mesh_settings["unit_scale"] @ mesh_settings["orientation_matrix"].T
+    node_tissue_id_array = repair_node_tissue_ids(
+        ras_nodes,
+        element_array,
+        as_node_tissue_id_array(node_tissue_ids, len(node_array)),
+        mesh_settings["ordered_tissue_ids"],
+    )
 
     prepared = {
         "nodes": ras_nodes,
         "elements": element_array,
-        "element_tissue_ids": tissue_id_array,
+        "node_tissue_ids": node_tissue_id_array,
+        "element_tissue_ids": element_tissue_id_array,
         "ordered_tissue_ids": mesh_settings["ordered_tissue_ids"],
         "ordered_tissues": mesh_settings["ordered_tissues"],
     }

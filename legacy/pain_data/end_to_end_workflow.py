@@ -1,10 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = [
-#     "marimo",
-# ]
-# ///
-
 import marimo
 
 __generated_with = "0.24.0"
@@ -30,7 +23,6 @@ def _():
         prepare_probe,
     )
     from mmcnirs.mmc.jacobian import generate_jacobian
-    from mmcnirs.utils.plot_jacobians import plot_tissue_sensitivity
     from mmcnirs.utils.probe_utils import load_channel_pairs_from_snirf
 
     return (
@@ -45,7 +37,6 @@ def _():
         mo,
         np,
         plt,
-        plot_tissue_sensitivity,
         prepare_jacobian_inputs,
         prepare_mesh,
         prepare_probe,
@@ -62,7 +53,7 @@ def _(mo):
     input files through a prepared head mesh, a registered probe, validated
     wavelength-specific MMC inputs, and generated Jacobians. Its purpose is
     both practical and diagnostic: it demonstrates how the core
-    `mmcnirs.light_transport` functions work together and helps expose any
+    `mmc_nirs.light_transport` functions work together and helps expose any
     information or API steps still missing from the package.
 
     The workflow uses a Colin27 standard head, a MATLAB `probe.SD` file,
@@ -85,15 +76,10 @@ def _(Path):
 
 
 @app.cell
-def _(download_hf_resource, notebook_directory):
+def _(notebook_directory):
     def download_workflow_inputs(*, overwrite: bool = False):
-        """Download every file in the public e2e-files dataset subtree."""
-        return download_hf_resource(
-            "workflow",
-            "e2e-files",
-            assets_root=notebook_directory,
-            force_download=overwrite,
-        )
+        """Return the retained local legacy workflow inputs."""
+        return notebook_directory
 
     return (download_workflow_inputs,)
 
@@ -217,6 +203,7 @@ def _(mo, standard_head_directory, standard_head_files):
 @app.cell
 def _(np, standard_head_directory):
     standard_mesh_path = standard_head_directory / "colin27_mesh.npz"
+    orientation_path = standard_head_directory / "orientation.txt"
 
     with np.load(standard_mesh_path, allow_pickle=False) as standard_mesh_archive:
         nodes_with_tissue_ids = standard_mesh_archive["nodes"].copy()
@@ -231,34 +218,38 @@ def _(np, standard_head_directory):
     input_node_tissue_ids = nodes_with_tissue_ids[:, -1]
     input_elements = elements_with_tissue_ids[:, :4]
     input_element_tissue_ids = elements_with_tissue_ids[:, -1]
+    mesh_orientation = orientation_path.read_text(encoding="utf-8").strip()
+    mesh_units = "mm"
     return (
         input_element_tissue_ids,
         input_elements,
         input_node_tissue_ids,
         input_nodes,
+        mesh_orientation,
+        mesh_units,
         standard_mesh_path,
     )
 
 
 @app.cell
 def _(
-    experiment_config,
     input_element_tissue_ids,
     input_elements,
     input_nodes,
+    mesh_orientation,
+    mesh_units,
     mo,
     np,
     standard_mesh_path,
 ):
     input_tissue_ids = ", ".join(str(int(value)) for value in np.unique(input_element_tissue_ids))
-    mesh_settings = experiment_config["mesh_settings"]
     mo.md(
         f"""
         ## 4. Prepare the mesh
 
         Input archive: `{standard_mesh_path}`
-        Orientation: `{mesh_settings["mesh_orientation"]}`
-        Units: `{mesh_settings["mesh_units"]}`
+        Orientation: `{mesh_orientation}`
+        Units: `{mesh_units}`
         Nodes: **{len(input_nodes):,}**
         Tetrahedra: **{len(input_elements):,}**
         Element tissue IDs present: **{input_tissue_ids}**
@@ -315,13 +306,11 @@ def _(experiment_config, mo, np, prepared_mesh):
             strict=True,
         )
     )
-    prepared_node_ids = ", ".join(str(int(value)) for value in np.unique(prepared_mesh["node_tissue_ids"]))
     prepared_element_ids = ", ".join(str(int(value)) for value in np.unique(prepared_mesh["element_tissue_ids"]))
     mo.md(
         f"""
         Prepared mesh: `{prepared_mesh_path}`
         Prepared keys: `{", ".join(sorted(prepared_mesh))}`
-        Node tissue IDs present: **{prepared_node_ids}**
         Element tissue IDs present: **{prepared_element_ids}**
 
         Tissue lookup carried by the prepared mesh:
@@ -355,17 +344,11 @@ def _(input_directory, load_channel_pairs_from_snirf, loadmat, np):
 def _(
     channel_pairings,
     detector_positions,
-    experiment_config,
     mo,
     sd_path,
     snirf_path,
     source_positions,
 ):
-    probe_settings = experiment_config["probe_settings"]
-    if probe_settings["short_separation_flag"] == "distance":
-        separation_rule = f"at most **{probe_settings['short_separation_arg']:g} mm**"
-    else:
-        separation_rule = f"listed by channel index: **{probe_settings['short_separation_arg']}**"
     mo.md(f"""
     ## 5. Prepare and register the probe
 
@@ -375,13 +358,9 @@ def _(
     Detectors: **{len(detector_positions)}**
     Channels: **{len(channel_pairings)}**
 
-    The probe coordinates use `{probe_settings["probe_units"]}` units and
-    `{probe_settings["probe_orientation"]}` orientation. Short-separation
-    channels are {separation_rule}.
-
-    Registration uses an embedding step of
-    `{probe_settings["embedding_step"]} mm` and at most
-    `{probe_settings["max_embedding_steps"]}` embedding steps.
+    The probe coordinates use millimetres and `LIA` orientation. Channels
+    with registered source-detector distance at most **20 mm** are treated
+    as short separation.
 
     These units, orientation, and short-separation rules were recovered
     from the SD file and/or the associated study documentation. There is no
@@ -460,7 +439,7 @@ def _(mo):
     photon_count = mo.ui.number(
         start=1,
         step=100_000,
-        value=5e8,
+        value=1_000_000,
         label="Photons per MMC run",
     )
     photon_count
@@ -593,7 +572,6 @@ def _(
             overwrite=overwrite_jacobians.value,
         )
         generation_seconds[_run_wavelength] = time.perf_counter() - start_time
-        print(f"{_run_wavelength} wavelength finished.")
     return generated_jacobians, generation_seconds
 
 
@@ -637,52 +615,6 @@ def _(
         ]
     )
     return
-
-
-@app.cell
-def _(
-    generated_jacobians,
-    jacobian_paths,
-    mo,
-    plot_tissue_sensitivity,
-    prepared_mesh,
-    prepared_probe,
-    wavelengths,
-):
-    sensitivity_figures = {}
-    sensitivity_paths = {}
-    for _plot_wavelength, _jacobian_path in zip(wavelengths, jacobian_paths, strict=True):
-        _figure_filename = f"{_jacobian_path.stem}_tissue_sensitivity.png"
-        sensitivity_figures[_plot_wavelength] = plot_tissue_sensitivity(
-            prepared_mesh=prepared_mesh,
-            prepared_probe=prepared_probe,
-            jacobian=generated_jacobians[_plot_wavelength]["J"],
-            channel_selection="all",
-            save_directory=_jacobian_path.parent,
-            save_filename=_figure_filename,
-        )
-        sensitivity_paths[_plot_wavelength] = _jacobian_path.parent / _figure_filename
-
-    saved_plot_paths = "\n".join(
-        f"- **{wavelength} nm:** `{sensitivity_paths[wavelength]}`" for wavelength in wavelengths
-    )
-    mo.vstack(
-        [
-            mo.md(
-                f"""
-                ## 9. Plot aggregate tissue sensitivity
-
-                Each figure averages the Jacobian over the configured channels,
-                displays every active channel pairing, and compares the two
-                opacity mappings on gray matter (tissue ID 2).
-
-                {saved_plot_paths}
-                """
-            ),
-            *[sensitivity_figures[wavelength] for wavelength in wavelengths],
-        ]
-    )
-    return sensitivity_figures, sensitivity_paths
 
 
 if __name__ == "__main__":
