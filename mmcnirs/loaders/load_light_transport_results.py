@@ -49,7 +49,7 @@ def _load_fields(archive_path, fields: tuple[str, ...]) -> dict[str, np.ndarray]
 
 
 def load_light_transport_results(experiment_config: dict[str, Any]) -> dict[str, Any]:
-    """Load canonical mesh, probe, Jacobian, and segmentation dictionaries.
+    """Load canonical mesh, probe, and Jacobian dictionaries.
 
     This function only deserializes the prepared light-transport inputs.
     Numerical, shape, and cross-file validation is performed by SimNIRS when
@@ -59,13 +59,13 @@ def load_light_transport_results(experiment_config: dict[str, Any]) -> dict[str,
     ----------
     experiment_config : dict
         Experiment configuration containing ``experiment_dir``, ``wavelengths``,
-        and the mesh, probe, Jacobian, and optional segmentation-map file paths.
+        and the mesh, probe, and Jacobian file paths.
 
     Returns
     -------
     dict[str, Any]
-        Canonical ``mesh``, ``probe``, ``jacobians``, and ``segmentation_map``
-        dictionaries accepted by SimNIRS.
+        Canonical ``mesh``, ``probe``, and ``jacobians`` dictionaries accepted
+        by SimNIRS.
 
     Raises
     ------
@@ -96,13 +96,8 @@ def load_light_transport_results(experiment_config: dict[str, Any]) -> dict[str,
                 _JACOBIAN_FIELDS,
             )
 
-        segmentation_path = file_paths.get("segmentation_map", "segmentation_map.npz")
-        with np.load(experiment_directory / segmentation_path, allow_pickle=False) as segmentation_archive:
-            segmentation_map = {region: segmentation_archive[region].copy() for region in segmentation_archive.files}
-
     return {
         "mesh": mesh,
         "probe": probe,
         "jacobians": jacobians,
-        "segmentation_map": segmentation_map,
     }
