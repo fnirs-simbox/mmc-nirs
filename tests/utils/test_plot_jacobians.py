@@ -27,6 +27,7 @@ def prepared_mesh() -> dict[str, np.ndarray]:
             dtype=float,
         ),
         "elements": np.array([[0, 1, 2, 3], [4, 5, 6, 7]]),
+        "node_tissue_ids": np.full(8, 2, dtype=int),
         "element_tissue_ids": np.array([2, 2]),
         "ordered_tissue_ids": np.array([0, 1, 2]),
         "ordered_tissues": np.array(["ambient_air", "white_matter", "gray_matter"]),

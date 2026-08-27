@@ -31,17 +31,20 @@ def test_prepare_mesh_returns_normalized_mesh(experiment_config) -> None:
         np.zeros((4, 3)),
         [[0, 1, 2, 3]],
         [1],
+        [1, 1, 1, 1],
         experiment_config=experiment_config,
     )
 
     assert set(prepared) == {
         "nodes",
         "elements",
+        "node_tissue_ids",
         "element_tissue_ids",
         "ordered_tissue_ids",
         "ordered_tissues",
     }
     np.testing.assert_array_equal(prepared["elements"], [[0, 1, 2, 3]])
+    np.testing.assert_array_equal(prepared["node_tissue_ids"], [1, 1, 1, 1])
     np.testing.assert_array_equal(prepared["element_tissue_ids"], [1])
     np.testing.assert_array_equal(prepared["ordered_tissue_ids"], [0, 1, 2, 3, 4, 5])
     np.testing.assert_array_equal(
@@ -50,7 +53,7 @@ def test_prepare_mesh_returns_normalized_mesh(experiment_config) -> None:
     )
 
 
-def test_prepare_mesh_reorients_and_preserves_ordered_tissue_ids(experiment_config) -> None:
+def test_prepare_mesh_reorients_and_preserves_tissue_ids(experiment_config) -> None:
     nodes = np.array(
         [
             [0.001, 0.002, 0.003],
@@ -70,10 +73,17 @@ def test_prepare_mesh_reorients_and_preserves_ordered_tissue_ids(experiment_conf
     }
     experiment_config["mesh_settings"]["mesh_orientation"] = "LIA"
     experiment_config["mesh_settings"]["mesh_units"] = "m"
-    mesh = prepare_mesh(nodes, np.tile([[1, 2, 3, 4]], (4, 1)), [5, 4, 3, 2], experiment_config)
+    mesh = prepare_mesh(
+        nodes,
+        np.tile([[1, 2, 3, 4]], (4, 1)),
+        [5, 4, 3, 2],
+        [0, 1, 2, 3],
+        experiment_config,
+    )
 
     np.testing.assert_allclose(mesh["nodes"], nodes * 1000 @ np.array([[-1, 0, 0], [0, 0, 1], [0, -1, 0]]).T)
     np.testing.assert_array_equal(mesh["elements"], np.tile([[0, 1, 2, 3]], (4, 1)))
+    np.testing.assert_array_equal(mesh["node_tissue_ids"], [0, 1, 2, 3])
     np.testing.assert_array_equal(mesh["element_tissue_ids"], [5, 4, 3, 2])
     np.testing.assert_array_equal(mesh["ordered_tissue_ids"], [0, 1, 2, 3, 4, 5])
     np.testing.assert_array_equal(
@@ -87,6 +97,7 @@ def test_prepare_mesh_saves_to_configured_path(experiment_config) -> None:
         np.zeros((4, 3)),
         [[0, 1, 2, 3]],
         [1],
+        [1, 1, 1, 1],
         experiment_config,
         save_mesh=True,
     )
@@ -104,13 +115,14 @@ def test_prepare_mesh_reuses_existing_archive_before_validation(experiment_confi
     cached = {
         "nodes": np.ones((4, 3)),
         "elements": np.array([[0, 1, 2, 3]]),
+        "node_tissue_ids": np.ones(4, dtype=int),
         "element_tissue_ids": np.array([1]),
         "ordered_tissue_ids": np.arange(6),
         "ordered_tissues": np.array(list(experiment_config["mesh_settings"]["ordered_tissues"].values())),
     }
     np.savez(output_dir / "mesh.npz", **cached)
 
-    prepared = prepare_mesh([], [], [], experiment_config)
+    prepared = prepare_mesh([], [], [], [], experiment_config)
 
     for key, value in cached.items():
         np.testing.assert_array_equal(prepared[key], value)
@@ -123,6 +135,7 @@ def test_prepare_mesh_overwrites_existing_archive(experiment_config) -> None:
         output_dir / "mesh.npz",
         nodes=np.ones((4, 3)),
         elements=[[0, 1, 2, 3]],
+        node_tissue_ids=[1, 1, 1, 1],
         element_tissue_ids=[1],
         ordered_tissue_ids=np.arange(6),
         ordered_tissues=list(experiment_config["mesh_settings"]["ordered_tissues"].values()),
@@ -132,6 +145,7 @@ def test_prepare_mesh_overwrites_existing_archive(experiment_config) -> None:
         np.zeros((4, 3)),
         [[0, 1, 2, 3]],
         [1],
+        [1, 1, 1, 1],
         experiment_config,
         save_mesh=True,
         overwrite=True,
@@ -148,14 +162,14 @@ def test_prepare_mesh_rejects_incompatible_cache(experiment_config) -> None:
     np.savez(output_dir / "mesh.npz", nodes=np.zeros((4, 3)))
 
     with pytest.raises(ValueError, match="missing required field"):
-        prepare_mesh([], [], [], experiment_config)
+        prepare_mesh([], [], [], [], experiment_config)
 
 
 def test_prepare_mesh_rejects_non_npz_output_name(experiment_config) -> None:
     experiment_config["filepaths"]["meshfile"] = "mesh.mat"
 
     with pytest.raises(ValueError, match=".npz"):
-        prepare_mesh([], [], [], experiment_config)
+        prepare_mesh([], [], [], [], experiment_config)
 
 
 @pytest.mark.parametrize(
@@ -163,6 +177,7 @@ def test_prepare_mesh_rejects_non_npz_output_name(experiment_config) -> None:
     [
         ("nodes", [[0, 0]], "nodes"),
         ("elements", [[0, 1, 2]], "elements"),
+        ("node_tissue_ids", [1, 2], "node_tissue_ids"),
         ("element_tissue_ids", [1, 2], "element_tissue_ids"),
         ("mesh_orientation", "XYZ", "orientation"),
         ("mesh_units", "km", "mesh_units"),
@@ -173,6 +188,7 @@ def test_prepare_mesh_rejects_invalid_input(experiment_config, field, value, mes
         "nodes": np.zeros((4, 3)),
         "elements": [[0, 1, 2, 3]],
         "element_tissue_ids": [1],
+        "node_tissue_ids": [1, 1, 1, 1],
         "experiment_config": experiment_config,
     }
     if field in {"mesh_orientation", "mesh_units"}:
@@ -190,6 +206,7 @@ def test_prepare_mesh_rejects_invalid_element_tissue_ids(experiment_config, inva
         np.zeros((4, 3)),
         [[0, 1, 2, 3]],
         [invalid_id],
+        [1, 1, 1, 1],
         experiment_config,
     )
     with pytest.raises(ValueError, match="not represented by ordered_tissues"):
@@ -201,10 +218,27 @@ def test_prepare_mesh_accepts_declared_background_id(experiment_config) -> None:
         np.zeros((4, 3)),
         [[0, 1, 2, 3]],
         [0],
+        [0, 0, 0, 0],
         experiment_config,
     )
 
     np.testing.assert_array_equal(prepared["element_tissue_ids"], [0])
+    np.testing.assert_array_equal(prepared["node_tissue_ids"], [0, 0, 0, 0])
+
+
+def test_prepare_mesh_repairs_unrepresented_node_tissue_ids(experiment_config) -> None:
+    nodes = np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 3.0, 0.0]])
+
+    with pytest.warns(UserWarning, match="2 0 1.000000 -1 1"):
+        prepared = prepare_mesh(
+            nodes,
+            [[0, 1, 2, 3]],
+            [1],
+            [1, 2, -1, 3],
+            experiment_config,
+        )
+
+    np.testing.assert_array_equal(prepared["node_tissue_ids"], [1, 2, 1, 3])
 
 
 def test_prepare_mesh_rejects_invalid_ordered_tissues(experiment_config) -> None:
@@ -212,6 +246,7 @@ def test_prepare_mesh_rejects_invalid_ordered_tissues(experiment_config) -> None
         np.zeros((4, 3)),
         [[0, 1, 2, 3]],
         [1],
+        [1, 1, 1, 1],
         experiment_config,
     )
     experiment_config["mesh_settings"]["ordered_tissues"] = {
@@ -238,13 +273,20 @@ def test_prepare_mesh_requires_complete_settings_before_cache_reuse(experiment_c
         output_dir / "mesh.npz",
         **{
             key: np.zeros(1)
-            for key in {"nodes", "elements", "element_tissue_ids", "ordered_tissue_ids", "ordered_tissues"}
+            for key in {
+                "nodes",
+                "elements",
+                "node_tissue_ids",
+                "element_tissue_ids",
+                "ordered_tissue_ids",
+                "ordered_tissues",
+            }
         },
     )
     del experiment_config["mesh_settings"]["mesh_orientation"]
 
     with pytest.raises(ValueError) as error:
-        prepare_mesh([], [], [], experiment_config)
+        prepare_mesh([], [], [], [], experiment_config)
 
     message = str(error.value)
     assert "required keys: mesh_orientation, mesh_units, ordered_tissues" in message

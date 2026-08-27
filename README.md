@@ -79,8 +79,9 @@ config = load_config("/path/to/experiment/config.json")
 light_transport_results = load_light_transport_results(config)
 ```
 
-The loader returns canonical mesh, probe, Jacobian, and segmentation-map
-dictionaries for SimNIRS.
+The loader returns canonical mesh, probe, and Jacobian dictionaries for
+SimNIRS. Load `segmentation_map.npz` separately in downstream code when a
+simulation needs anatomical-region masks; it is not part of light transport.
 
 ## Load a standard head
 

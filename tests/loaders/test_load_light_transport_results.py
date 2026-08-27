@@ -10,6 +10,7 @@ from mmcnirs import load_config, load_light_transport_results
 MESH_FIELDS = {
     "nodes",
     "elements",
+    "node_tissue_ids",
     "element_tissue_ids",
     "ordered_tissue_ids",
     "ordered_tissues",
@@ -38,6 +39,7 @@ def experiment_config_path(tmp_path: Path) -> Path:
         output_directory / "mesh.npz",
         nodes=np.arange(12, dtype=float).reshape(4, 3),
         elements=np.array([[0, 1, 2, 3]]),
+        node_tissue_ids=np.array([0, 1, 1, 1]),
         element_tissue_ids=np.array([1]),
         ordered_tissue_ids=np.array([0, 1]),
         ordered_tissues=np.array(["ambient_air", "gray_matter"]),
@@ -64,12 +66,6 @@ def experiment_config_path(tmp_path: Path) -> Path:
             Green_d=np.ones((3, 4)),
             Green_sd=np.ones((6, 4)),
         )
-    np.savez(
-        experiment_directory / "segmentation_map.npz",
-        gray_matter=np.array([0, 1, 1, 0]),
-        motor_cortex=np.array([False, True, False, False]),
-    )
-
     config_path = experiment_directory / "config.json"
     config_path.write_text(
         json.dumps(
@@ -83,7 +79,7 @@ def experiment_config_path(tmp_path: Path) -> Path:
                         "mmcnirs_outputs/jacobian_830.npz",
                     ],
                     "probefile": "mmcnirs_outputs/probe.npz",
-                    "segmentation_map": "segmentation_map.npz",
+                    "segmentation_map": "missing-segmentation-map.npz",
                 },
             }
         ),
@@ -95,13 +91,14 @@ def experiment_config_path(tmp_path: Path) -> Path:
 def test_load_light_transport_results_returns_canonical_inputs(experiment_config_path: Path) -> None:
     data = load_light_transport_results(load_config(experiment_config_path))
 
-    assert set(data) == {"mesh", "probe", "jacobians", "segmentation_map"}
+    assert set(data) == {"mesh", "probe", "jacobians"}
     assert set(data["mesh"]) == MESH_FIELDS
     assert set(data["probe"]) == PROBE_FIELDS
     assert set(data["jacobians"]) == {690, 830}
     assert all(type(wavelength) is int for wavelength in data["jacobians"])
 
     np.testing.assert_array_equal(data["mesh"]["elements"], [[0, 1, 2, 3]])
+    np.testing.assert_array_equal(data["mesh"]["node_tissue_ids"], [0, 1, 1, 1])
     np.testing.assert_array_equal(data["mesh"]["ordered_tissues"], ["ambient_air", "gray_matter"])
     np.testing.assert_array_equal(data["probe"]["channel_pairings"], [[0, 1], [1, 1], [1, 2]])
     np.testing.assert_array_equal(data["probe"]["short_separation_indices"], [0])
@@ -113,19 +110,6 @@ def test_load_light_transport_results_returns_canonical_inputs(experiment_config
         np.testing.assert_array_equal(result["J"], np.arange(24).reshape(6, 4) + offset * 100)
         np.testing.assert_array_equal(result["mea0"], np.arange(6).reshape(6, 1) + offset * 10)
         np.testing.assert_array_equal(result["channelidx"], [4, 1, 5])
-
-    assert set(data["segmentation_map"]) == {"gray_matter", "motor_cortex"}
-    np.testing.assert_array_equal(data["segmentation_map"]["gray_matter"], [0, 1, 1, 0])
-    np.testing.assert_array_equal(data["segmentation_map"]["motor_cortex"], [False, True, False, False])
-
-
-def test_load_light_transport_results_supports_default_segmentation_path(experiment_config_path: Path) -> None:
-    config = load_config(experiment_config_path)
-    del config["filepaths"]["segmentation_map"]
-
-    data = load_light_transport_results(config)
-
-    assert set(data["segmentation_map"]) == {"gray_matter", "motor_cortex"}
 
 
 def test_load_light_transport_results_loads_external_relative_experiment(

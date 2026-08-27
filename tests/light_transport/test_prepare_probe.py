@@ -40,6 +40,7 @@ def prepared_mesh():
     return {
         "nodes": np.array([[0, 0, 0], [20, 0, 0], [0, 20, 0], [0, 0, 20]], dtype=float),
         "elements": np.array([[0, 1, 2, 3]]),
+        "node_tissue_ids": np.ones(4, dtype=int),
         "element_tissue_ids": np.array([1]),
         "ordered_tissue_ids": np.array([0, 1]),
         "ordered_tissues": np.array(["ambient_air", "tissue"]),
@@ -276,6 +277,7 @@ def test_saved_prepared_inputs_are_loadable_downstream(
         np.array([[0, 0, 0], [20, 0, 0], [0, 20, 0], [0, 0, 20]], dtype=float),
         [[0, 1, 2, 3]],
         [1],
+        [1, 1, 1, 1],
         experiment_config,
         save_mesh=True,
     )
