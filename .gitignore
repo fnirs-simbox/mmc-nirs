@@ -210,7 +210,7 @@ tempCodeRunnerFile.py
 .ruff_cache/
 
 # User-visible assets downloaded from Hugging Face
-/mmcnirs-assets/
+mmcnirs-assets/
 
 # Legacy workflows and data retained only in local development checkouts
 /legacy/

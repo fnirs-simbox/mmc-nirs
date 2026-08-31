@@ -66,7 +66,7 @@ def _(data_directory, np):
 
 @app.cell
 def _(mo):
-    rebuild_inputs = mo.ui.checkbox(value=False, label="Rebuild prepared mesh and probe")
+    rebuild_inputs = mo.ui.checkbox(value=True, label="Rebuild prepared mesh and probe")
     rebuild_inputs
     return (rebuild_inputs,)
 

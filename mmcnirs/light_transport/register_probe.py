@@ -43,10 +43,11 @@ def register_probe(
         Unit used by the probe coordinates. Mesh coordinates are assumed to be
         millimetres.
     embedding_step : float, default=0.5
-        Distance in millimetres by which exterior optodes move toward the mesh
-        center during each embedding iteration.
+        Distance in millimetres used to move interior optodes outside the mesh
+        and then move all optodes inward until they enter a tetrahedron.
     max_embedding_steps : int, default=1000
-        Maximum number of embedding iterations before registration fails.
+        Maximum number of iterations in each surface-placement phase before
+        registration fails.
     Returns
     -------
     registered_sources : numpy.ndarray
@@ -126,7 +127,7 @@ def register_probe(
     source_directions = find_optode_directions(registered_sources, nodes)
     detector_directions = find_optode_directions(registered_detectors, nodes)
 
-    # Move any exterior sources inward until each lies in a tetrahedron.
+    # Move every source outside before embedding it just beneath the surface.
     registered_sources, source_elements = _embed_optodes(
         registered_sources,
         source_directions,
@@ -136,7 +137,7 @@ def register_probe(
         max_embedding_steps,
     )
 
-    # Perform the same embedding and containing-element lookup for detectors.
+    # Perform the same surface placement and element lookup for detectors.
     registered_detectors, detector_elements = _embed_optodes(
         registered_detectors,
         detector_directions,
@@ -250,8 +251,29 @@ def _embed_optodes(
     step: float,
     max_steps: int,
 ) -> tuple[np.ndarray, np.ndarray]:
+    """Place every optode inside the mesh within one inward step of its surface."""
     embedded_coordinates = coordinates.copy()
     containing_elements = _find_containing_elements(embedded_coordinates, nodes, elements)
+
+    # First move every interior optode outward. Reversing these same fixed rays
+    # below makes all final depths independent of the optimizer's initial mix
+    # of interior and exterior positions.
+    for _ in range(max_steps):
+        interior_mask = containing_elements >= 0
+        if not np.any(interior_mask):
+            break
+        embedded_coordinates[interior_mask] -= directions[interior_mask] * step
+        containing_elements[interior_mask] = _find_containing_elements(
+            embedded_coordinates[interior_mask],
+            nodes,
+            elements,
+        )
+
+    if np.any(containing_elements >= 0):
+        number_interior = int(np.count_nonzero(containing_elements >= 0))
+        raise RuntimeError(f"Failed to move {number_interior} optode(s) outside the mesh within {max_steps} steps")
+
+    # Move all optodes inward until each one is contained by a tetrahedron.
     for _ in range(max_steps):
         exterior_mask = containing_elements < 0
         if not np.any(exterior_mask):

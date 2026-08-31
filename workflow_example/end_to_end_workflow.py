@@ -44,8 +44,8 @@ def _():
         loadmat,
         mo,
         np,
-        plt,
         plot_tissue_sensitivity,
+        plt,
         prepare_jacobian_inputs,
         prepare_mesh,
         prepare_probe,
@@ -276,7 +276,7 @@ def _(
 @app.cell
 def _(mo):
     rebuild_prepared_inputs = mo.ui.checkbox(
-        value=False,
+        value=True,
         label="Rebuild mesh.npz and probe.npz instead of reusing compatible saved files",
     )
     rebuild_prepared_inputs
@@ -682,7 +682,7 @@ def _(
             *[sensitivity_figures[wavelength] for wavelength in wavelengths],
         ]
     )
-    return sensitivity_figures, sensitivity_paths
+    return
 
 
 if __name__ == "__main__":
