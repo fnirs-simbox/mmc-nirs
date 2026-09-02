@@ -1159,6 +1159,7 @@ dependencies = [
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "scipy" },
+    { name = "tqdm" },
     { name = "trimesh" },
 ]
 
@@ -1202,6 +1203,7 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=7.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.13" },
     { name = "scipy", specifier = ">=1.15.3" },
+    { name = "tqdm", specifier = ">=4.70.0" },
     { name = "trimesh", specifier = ">=4.8.3" },
     { name = "twine", marker = "extra == 'dev'", specifier = ">=6.2.0" },
 ]

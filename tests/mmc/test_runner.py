@@ -60,7 +60,7 @@ def test_run_mmc_rejects_missing_config_before_runtime_lookup(tmp_path: Path, mo
         runner.run_mmc("missing.json", working_directory=tmp_path)
 
 
-def test_run_mmc_raises_clear_timeout_without_retry(tmp_path: Path, monkeypatch) -> None:
+def test_run_mmc_raises_clear_timeout_after_max_trials(tmp_path: Path, monkeypatch) -> None:
     config_path = tmp_path / "simulation.json"
     config_path.write_text("{}", encoding="utf-8")
     monkeypatch.setattr(runner.runtime, "get_mmc_executable", lambda: tmp_path / "runtime" / "mmc")
@@ -68,14 +68,17 @@ def test_run_mmc_raises_clear_timeout_without_retry(tmp_path: Path, monkeypatch)
 
     def fake_run(command, **kwargs):
         calls.append((command, kwargs))
-        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"], stderr="MMC stalled on detector 16")
 
     monkeypatch.setattr(runner.subprocess, "run", fake_run)
 
-    with pytest.raises(TimeoutError, match="MMC timed out after 3 seconds.*simulation.json"):
+    with pytest.raises(
+        TimeoutError,
+        match="MMC timed out after 3 seconds.*simulation.json.*Command.*MMC stalled on detector 16",
+    ):
         runner.run_mmc(config_path, working_directory=tmp_path, timeout=3)
 
-    assert len(calls) == 1
+    assert len(calls) == 5
 
 
 def test_run_mmc_raises_clear_error_for_nonzero_exit_without_retry(tmp_path: Path, monkeypatch) -> None:

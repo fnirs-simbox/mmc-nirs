@@ -12,6 +12,7 @@ from typing import Any
 
 import numpy as np
 from numpy.typing import ArrayLike
+from tqdm.auto import tqdm
 
 from mmcnirs.light_transport.prepare_jacobian_inputs import prepare_jacobian_inputs
 from mmcnirs.mmc.history import read_cli_output, read_flux
@@ -146,7 +147,9 @@ def generate_jacobian(
     with TemporaryDirectory(prefix="mmcnirs-jacobian-") as temporary_directory_name:
         temporary_directory = Path(temporary_directory_name)
 
-        for source_index in range(source_count):
+        source_progress = tqdm(range(source_count), desc="MMC sources", unit="source")
+        for source_index in source_progress:
+            source_progress.set_postfix_str(f"source {source_index}")
             output_stub = temporary_directory / f"source_{source_index:04d}"
             source_config = base_config | {
                 "srcpos": inputs.source_positions[source_index].tolist(),
@@ -156,7 +159,12 @@ def generate_jacobian(
             }
             config_path = output_stub.with_suffix(".json")
             mmc_to_json(source_config, config_path)
-            run_mmc(config_path, working_directory=temporary_directory, timeout=float(timeout))
+            try:
+                run_mmc(config_path, working_directory=temporary_directory, timeout=float(timeout))
+            except TimeoutError as error:
+                raise TimeoutError(
+                    f"MMC failed while computing source {source_index} ({source_index + 1}/{source_count}): {error}"
+                ) from error
 
             source_flux, detected_photons = read_cli_output(output_stub)
             source_flux = validate_mmc_flux(source_flux, node_count, f"source {source_index}")
@@ -177,7 +185,9 @@ def generate_jacobian(
                 source_flux[inputs.closest_detector_nodes] * JACOBIAN_TSTEP_SECONDS
             )
 
-        for detector_index in range(detector_count):
+        detector_progress = tqdm(range(detector_count), desc="MMC detectors", unit="detector")
+        for detector_index in detector_progress:
+            detector_progress.set_postfix_str(f"detector {detector_index}")
             output_stub = temporary_directory / f"detector_{detector_index:04d}"
             detector_config = base_config | {
                 "srcpos": inputs.detector_positions[detector_index].tolist(),
@@ -186,7 +196,13 @@ def generate_jacobian(
             }
             config_path = output_stub.with_suffix(".json")
             mmc_to_json(detector_config, config_path)
-            run_mmc(config_path, working_directory=temporary_directory, timeout=float(timeout))
+            try:
+                run_mmc(config_path, working_directory=temporary_directory, timeout=float(timeout))
+            except TimeoutError as error:
+                raise TimeoutError(
+                    f"MMC failed while computing detector {detector_index} "
+                    f"({detector_index + 1}/{detector_count}): {error}"
+                ) from error
 
             detector_flux = read_flux(output_stub.with_suffix(".dat"))
             green_detector[detector_index] = (
