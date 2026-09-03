@@ -31,6 +31,8 @@ from mmcnirs.utils.jacobian_utils import (
 __all__ = ["generate_jacobian"]
 
 _DETECTOR_RADIUS_MM = 1.0
+_DETECTOR_AREA_MM2 = np.pi * _DETECTOR_RADIUS_MM**2
+_ADJOINT_REFLECTANCE_ALPHA = 8.47
 
 
 def _sum_detected_photon_weights(
@@ -56,18 +58,81 @@ def _sum_detected_photon_weights(
     )
 
 
+def _calculate_node_volumes(
+    nodes: ArrayLike,
+    elements: ArrayLike,
+) -> np.ndarray:
+    """Calculate barycentric dual volumes for tetrahedral mesh nodes."""
+    node_array = np.asarray(nodes, dtype=float)
+    element_array = np.asarray(elements)
+
+    if node_array.ndim != 2 or node_array.shape[1] != 3:
+        raise ValueError("Mesh nodes must have shape (N, 3)")
+    if element_array.ndim != 2 or element_array.shape[1] != 4:
+        raise ValueError("Mesh elements must have shape (E, 4)")
+    if not np.issubdtype(element_array.dtype, np.integer):
+        if not np.all(np.isfinite(element_array)) or not np.all(element_array == np.floor(element_array)):
+            raise ValueError("Mesh elements must contain integer node indices")
+        element_array = element_array.astype(np.intp)
+    else:
+        element_array = element_array.astype(np.intp, copy=False)
+
+    node_count = len(node_array)
+    if element_array.size and (element_array.min() < 0 or element_array.max() >= node_count):
+        raise ValueError("Mesh elements contain out-of-range node indices")
+
+    # tetrahedral points
+    p0 = node_array[element_array[:, 0]]
+    p1 = node_array[element_array[:, 1]]
+    p2 = node_array[element_array[:, 2]]
+    p3 = node_array[element_array[:, 3]]
+
+    # tetrahedral volumes
+    element_volumes = (
+        np.abs(
+            np.einsum(
+                "ij,ij->i",
+                p1 - p0,
+                np.cross(p2 - p0, p3 - p0),
+            )
+        )
+        / 6.0
+    )
+
+    if not np.all(np.isfinite(element_volumes)) or np.any(element_volumes <= 0):
+        raise ValueError("Mesh contains invalid or degenerate tetrahedra")
+
+    # assign volume to each node depending on it's tetrahedras
+    node_volumes = np.zeros(node_count, dtype=float)
+    for local_node_index in range(4):
+        np.add.at(
+            node_volumes,
+            element_array[:, local_node_index],
+            element_volumes / 4.0,
+        )
+
+    if np.any(node_volumes <= 0):
+        raise ValueError("Every mesh node must have a positive associated volume")
+
+    return node_volumes
+
+
 def _calculate_jacobian(
     green_source: np.ndarray,
     green_detector: np.ndarray,
     green_source_detector: np.ndarray,
+    node_volumes: np.ndarray,
 ) -> np.ndarray:
-    """Apply the legacy source-adjoint normalization for every optode pair."""
+    """Calculate the Rytov log-intensity Jacobian for every source-detector pair."""
     source_count, node_count = green_source.shape
     detector_count = green_detector.shape[0]
+
+    volumes = np.asarray(node_volumes, dtype=float).reshape(-1)
+
     normalizers = np.asarray(green_source_detector, dtype=float).reshape(-1)
     if normalizers.shape != (source_count * detector_count,):
         raise ValueError("Green_sd must contain one value per source-detector pair")
-    invalid_normalizers = ~np.isfinite(normalizers) | (normalizers <= 0)
+    invalid_normalizers = ~np.isfinite(normalizers) | (normalizers < 0)
     if np.any(invalid_normalizers):
         row = int(np.flatnonzero(invalid_normalizers)[0])
         source_index, detector_index = divmod(row, detector_count)
@@ -77,7 +142,18 @@ def _calculate_jacobian(
     for source_index in range(source_count):
         for detector_index in range(detector_count):
             row = source_index * detector_count + detector_index
-            jacobian[row] = green_source[source_index] * green_detector[detector_index] / normalizers[row]
+
+            if normalizers[row] == 0:
+                jacobian[row] = 0.0
+                continue
+
+            jacobian[row] = (
+                -_ADJOINT_REFLECTANCE_ALPHA
+                * volumes
+                * green_source[source_index]
+                * green_detector[detector_index]
+                / normalizers[row]
+            )
     return jacobian
 
 
@@ -139,6 +215,9 @@ def generate_jacobian(
     detector_count = len(inputs.detector_positions)
     node_count = len(inputs.nodes)
     row_count = source_count * detector_count
+
+    node_volumes = _calculate_node_volumes(inputs.nodes, inputs.elements)
+
     green_source = np.zeros((source_count, node_count), dtype=float)
     green_detector = np.zeros((detector_count, node_count), dtype=float)
     green_source_detector = np.zeros((row_count, 1), dtype=float)
@@ -169,6 +248,7 @@ def generate_jacobian(
             source_flux, detected_photons = read_cli_output(output_stub)
             source_flux = validate_mmc_flux(source_flux, node_count, f"source {source_index}")
             green_source[source_index] = source_flux * JACOBIAN_TSTEP_SECONDS
+
             photon_weights = compute_detected_photon_weights(
                 detected_photons,
                 optical_properties=inputs.selected_properties,
@@ -180,9 +260,21 @@ def generate_jacobian(
             )
             row_start = source_index * detector_count
             row_stop = row_start + detector_count
-            measurements_zero[row_start:row_stop, 0] = detector_weight_sums
+
+            measurements_zero[row_start:row_stop, 0] = detector_weight_sums / inputs.photon_count
+
+            detector_ids = np.asarray(detected_photons["detid"], dtype=int)
+            for detector_index in np.flatnonzero(detector_weight_sums == 0):
+                detected_count = np.sum(detector_ids == detector_index + 1)
+                print(
+                    f"source {source_index}, detector {detector_index}: "
+                    f"detected_count={detected_count}, "
+                    f"weight_sum={detector_weight_sums[detector_index]}"
+                )
+
+            # Baseline source-detector diffuse reflectance used for Rytov normalization.
             green_source_detector[row_start:row_stop, 0] = (
-                source_flux[inputs.closest_detector_nodes] * JACOBIAN_TSTEP_SECONDS
+                detector_weight_sums / _DETECTOR_AREA_MM2 / inputs.photon_count
             )
 
         detector_progress = tqdm(range(detector_count), desc="MMC detectors", unit="detector")
@@ -205,15 +297,14 @@ def generate_jacobian(
                 ) from error
 
             detector_flux = read_flux(output_stub.with_suffix(".dat"))
-            green_detector[detector_index] = (
-                validate_mmc_flux(detector_flux, node_count, f"detector {detector_index}") * JACOBIAN_TSTEP_SECONDS
-            )
+            detector_flux = validate_mmc_flux(detector_flux, node_count, f"detector {detector_index}")
+            green_detector[detector_index] = detector_flux * JACOBIAN_TSTEP_SECONDS
 
     result = {
         "Green_d": green_detector,
         "Green_s": green_source,
         "Green_sd": green_source_detector,
-        "J": _calculate_jacobian(green_source, green_detector, green_source_detector),
+        "J": _calculate_jacobian(green_source, green_detector, green_source_detector, node_volumes),
         "channelidx": inputs.channel_indices,
         "mea0": measurements_zero,
         "sourcepos": inputs.source_positions,

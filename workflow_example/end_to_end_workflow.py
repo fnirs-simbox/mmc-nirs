@@ -460,7 +460,7 @@ def _(mo):
     photon_count = mo.ui.number(
         start=1,
         step=100_000,
-        value=5e8,
+        value=5e6,
         label="Photons per MMC run",
     )
     photon_count
@@ -682,6 +682,11 @@ def _(
             *[sensitivity_figures[wavelength] for wavelength in wavelengths],
         ]
     )
+    return
+
+
+@app.cell
+def _():
     return
 
 
