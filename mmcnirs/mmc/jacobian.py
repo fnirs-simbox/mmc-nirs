@@ -96,6 +96,39 @@ def _validate_complete_detected_history(
         )
 
 
+def _calculate_detected_mean_pathlengths(
+    detected_photons: Mapping[str, ArrayLike],
+    photon_weights: ArrayLike,
+    detector_weight_sums: ArrayLike,
+    detector_count: int,
+) -> np.ndarray:
+    """Calculate detected-weighted mean photon path length for each detector."""
+    weights = np.asarray(photon_weights, dtype=float)
+    weight_sums = np.asarray(detector_weight_sums, dtype=float)
+    detector_ids = np.asarray(detected_photons["detid"], dtype=np.intp)
+    partial_paths = np.asarray(detected_photons["ppath"], dtype=float)
+    unitinmm = float(detected_photons.get("unitinmm", 1.0))
+
+    total_pathlengths_mm = partial_paths.sum(axis=1) * unitinmm
+
+    weighted_path_sums = np.asarray(
+        [
+            np.sum(
+                weights[detector_ids == detector_index + 1] * total_pathlengths_mm[detector_ids == detector_index + 1]
+            )
+            for detector_index in range(detector_count)
+        ],
+        dtype=float,
+    )
+
+    return np.divide(
+        weighted_path_sums,
+        weight_sums,
+        out=np.full(detector_count, np.nan, dtype=float),
+        where=weight_sums > 0,
+    )
+
+
 def _calculate_node_volumes(
     nodes: ArrayLike,
     elements: ArrayLike,
@@ -260,6 +293,7 @@ def generate_jacobian(
     green_detector = np.zeros((detector_count, node_count), dtype=float)
     green_source_detector = np.zeros((row_count, 1), dtype=float)
     measurements_zero = np.zeros((row_count, 1), dtype=float)
+    replay_mean_pathlength = np.full((row_count, 1), np.nan, dtype=float)
 
     with TemporaryDirectory(prefix="mmcnirs-jacobian-") as temporary_directory_name:
         temporary_directory = Path(temporary_directory_name)
@@ -297,9 +331,16 @@ def generate_jacobian(
                 photon_weights,
                 detector_count,
             )
+            detector_mean_pathlengths = _calculate_detected_mean_pathlengths(
+                detected_photons,
+                photon_weights,
+                detector_weight_sums,
+                detector_count,
+            )
+
             row_start = source_index * detector_count
             row_stop = row_start + detector_count
-
+            replay_mean_pathlength[row_start:row_stop, 0] = detector_mean_pathlengths
             measurements_zero[row_start:row_stop, 0] = detector_weight_sums / inputs.photon_count
 
             detector_ids = np.asarray(detected_photons["detid"], dtype=int)
@@ -343,11 +384,29 @@ def generate_jacobian(
             detector_flux = validate_mmc_flux(detector_flux, node_count, f"detector {detector_index}")
             green_detector[detector_index] = detector_flux * JACOBIAN_TSTEP_SECONDS
 
+    jacobian = _calculate_jacobian(green_source, green_detector, green_source_detector, node_volumes)
+    jacobian_effective_pathlength = -jacobian.sum(axis=1, keepdims=True)
+    pathlength_ratio = np.divide(
+        jacobian_effective_pathlength,
+        replay_mean_pathlength,
+        out=np.full_like(jacobian_effective_pathlength, np.nan),
+        where=replay_mean_pathlength > 0,
+    )
+    alpha_required = np.divide(
+        _ADJOINT_REFLECTANCE_ALPHA * replay_mean_pathlength,
+        jacobian_effective_pathlength,
+        out=np.full_like(replay_mean_pathlength, np.nan),
+        where=jacobian_effective_pathlength > 0,
+    )
     result = {
         "Green_d": green_detector,
         "Green_s": green_source,
         "Green_sd": green_source_detector,
-        "J": _calculate_jacobian(green_source, green_detector, green_source_detector, node_volumes),
+        "J": jacobian,
+        "replay_mean_pathlength": replay_mean_pathlength,
+        "jacobian_effective_pathlength": jacobian_effective_pathlength,
+        "pathlength_ratio": pathlength_ratio,
+        "alpha_required": alpha_required,
         "channelidx": inputs.channel_indices,
         "mea0": measurements_zero,
         "sourcepos": inputs.source_positions,
