@@ -95,9 +95,9 @@ def _write_history(path: Path, records: np.ndarray, detector_count: int = 2) -> 
     path.write_bytes(header + records.tobytes())
 
 
-def _mock_mmc_outputs(monkeypatch, *, zero_normalizer: bool = False):
+def _mock_mmc_outputs(monkeypatch, *, zero_source_flux: bool = False):
     source_fluxes = {
-        "source_0000": np.array([0.0 if zero_normalizer else 2.0, 4.0, 6.0, 8.0]),
+        "source_0000": np.array([0.0 if zero_source_flux else 2.0, 4.0, 6.0, 8.0]),
         "source_0001": np.array([3.0, 6.0, 9.0, 12.0]),
     }
     detector_fluxes = {
@@ -106,7 +106,7 @@ def _mock_mmc_outputs(monkeypatch, *, zero_normalizer: bool = False):
     }
     histories = {
         "source_0000": np.array([[1.0, 1.0], [2.0, 2.0], [2.0, 3.0]]),
-        "source_0001": np.array([[1.0, 4.0]]),
+        "source_0001": np.array([[1.0, 4.0], [2.0, 5.0]]),
     }
     calls = []
 
@@ -150,23 +150,25 @@ def test_generate_jacobian_runs_mmc_and_preserves_legacy_calculations(
     tstep = 5e-9
     expected_green_s = np.vstack((source_fluxes["source_0000"], source_fluxes["source_0001"])) * tstep
     expected_green_d = np.vstack((detector_fluxes["detector_0000"], detector_fluxes["detector_0001"])) * tstep
-    expected_green_sd = np.array([[2.0], [4.0], [3.0], [6.0]]) * tstep
+    detector_weight_sums = np.array(
+        [
+            np.exp(-0.1),
+            np.exp(-0.2) + np.exp(-0.3),
+            np.exp(-0.4),
+            np.exp(-0.5),
+        ]
+    )
+    expected_green_sd = (detector_weight_sums / (np.pi * 100)).reshape(-1, 1)
+    node_volumes = np.full(4, 1.0 / 24.0)
     expected_jacobian = np.vstack(
         [
-            expected_green_s[0] * expected_green_d[0] / expected_green_sd[0],
-            expected_green_s[0] * expected_green_d[1] / expected_green_sd[1],
-            expected_green_s[1] * expected_green_d[0] / expected_green_sd[2],
-            expected_green_s[1] * expected_green_d[1] / expected_green_sd[3],
+            -8.47 * node_volumes * expected_green_s[0] * expected_green_d[0] / expected_green_sd[0],
+            -8.47 * node_volumes * expected_green_s[0] * expected_green_d[1] / expected_green_sd[1],
+            -8.47 * node_volumes * expected_green_s[1] * expected_green_d[0] / expected_green_sd[2],
+            -8.47 * node_volumes * expected_green_s[1] * expected_green_d[1] / expected_green_sd[3],
         ]
     )
-    expected_measurements = np.array(
-        [
-            [np.exp(-0.1)],
-            [np.exp(-0.2) + np.exp(-0.3)],
-            [np.exp(-0.4)],
-            [0.0],
-        ]
-    )
+    expected_measurements = (detector_weight_sums / 100).reshape(-1, 1)
 
     np.testing.assert_allclose(result["Green_s"], expected_green_s)
     np.testing.assert_allclose(result["Green_d"], expected_green_d)
@@ -265,24 +267,25 @@ def test_generate_jacobian_can_skip_saving(
     assert result["J"].shape == (4, 4)
 
 
-def test_generate_jacobian_rejects_zero_source_detector_normalization(
+def test_generate_jacobian_accepts_zero_source_flux(
     tmp_path: Path,
     monkeypatch,
     prepared_mesh,
     prepared_probe,
     optical_properties,
 ) -> None:
-    _mock_mmc_outputs(monkeypatch, zero_normalizer=True)
+    _mock_mmc_outputs(monkeypatch, zero_source_flux=True)
 
-    with pytest.raises(ValueError, match="Green_sd must be finite and positive for source 0, detector 0"):
-        generate_jacobian(
-            prepared_mesh,
-            prepared_probe,
-            optical_properties,
-            {"nphoton": 100},
-            690,
-            tmp_path / "jacobian.npz",
-        )
+    result = generate_jacobian(
+        prepared_mesh,
+        prepared_probe,
+        optical_properties,
+        {"nphoton": 100},
+        690,
+        tmp_path / "jacobian.npz",
+    )
+
+    np.testing.assert_array_equal(result["J"][:2, 0], [0.0, 0.0])
 
 
 @pytest.mark.parametrize(

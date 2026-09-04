@@ -51,6 +51,7 @@ def build_jacobian_mmc_config(
         "method": "elem",
         "issaveexit": 1,
         "issavedet": 1,
+        "isnormalized": 1,
         "outputtype": "flux",
     }
 

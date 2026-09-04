@@ -9,6 +9,7 @@ from numbers import Real
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
+import warnings
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -56,6 +57,43 @@ def _sum_detected_photon_weights(
         [weights[detector_ids == detector_index + 1].sum() for detector_index in range(detector_count)],
         dtype=float,
     )
+
+
+def _validate_complete_detected_history(
+    detected_photons: Mapping[str, ArrayLike],
+    source_index: int,
+) -> None:
+    """Require all detected photons to be present for absolute detector measurements."""
+    detected_counts = np.asarray(
+        detected_photons["detected_counts"],
+        dtype=np.int64,
+    ).reshape(-1)
+    saved_counts = np.asarray(
+        detected_photons["saved_counts"],
+        dtype=np.int64,
+    ).reshape(-1)
+
+    if detected_counts.shape != saved_counts.shape:
+        raise ValueError("MMC history detected/saved count arrays must have matching shapes")
+
+    if np.any(detected_counts < 0) or np.any(saved_counts < 0):
+        raise ValueError("MMC history photon counts must be non-negative")
+
+    if np.any(saved_counts > detected_counts):
+        raise ValueError("MMC history reports more saved photons than detected photons")
+
+    truncated = saved_counts < detected_counts
+    if np.any(truncated):
+        block = int(np.flatnonzero(truncated)[0])
+
+        raise RuntimeError(
+            "MMC detected-photon history was truncated for "
+            f"source {source_index}, block {block}: "
+            f"detected={detected_counts[block]}, "
+            f"saved={saved_counts[block]}. "
+            "Green_sd and mea0 require the complete detected-photon history; "
+            "increase MMC maxdetphoton."
+        )
 
 
 def _calculate_node_volumes(
@@ -225,7 +263,7 @@ def generate_jacobian(
 
     with TemporaryDirectory(prefix="mmcnirs-jacobian-") as temporary_directory_name:
         temporary_directory = Path(temporary_directory_name)
-
+        selected_channel_rows = set(np.asarray(inputs.channel_indices, dtype=int).reshape(-1))
         source_progress = tqdm(range(source_count), desc="MMC sources", unit="source")
         for source_index in source_progress:
             source_progress.set_postfix_str(f"source {source_index}")
@@ -246,6 +284,7 @@ def generate_jacobian(
                 ) from error
 
             source_flux, detected_photons = read_cli_output(output_stub)
+            _validate_complete_detected_history(detected_photons, source_index)
             source_flux = validate_mmc_flux(source_flux, node_count, f"source {source_index}")
             green_source[source_index] = source_flux * JACOBIAN_TSTEP_SECONDS
 
@@ -265,12 +304,16 @@ def generate_jacobian(
 
             detector_ids = np.asarray(detected_photons["detid"], dtype=int)
             for detector_index in np.flatnonzero(detector_weight_sums == 0):
+                row = source_index * detector_count + detector_index
                 detected_count = np.sum(detector_ids == detector_index + 1)
-                print(
-                    f"source {source_index}, detector {detector_index}: "
-                    f"detected_count={detected_count}, "
-                    f"weight_sum={detector_weight_sums[detector_index]}"
+                message = (
+                    "Source-detector pair has zero detected-photon weight: "
+                    f"source={source_index}, detector={detector_index}, "
+                    f"detected_count={detected_count}, weight_sum=0."
                 )
+                if row in selected_channel_rows:
+                    raise RuntimeError("Selected " + message)
+                warnings.warn("Unselected " + message, RuntimeWarning, stacklevel=2)
 
             # Baseline source-detector diffuse reflectance used for Rytov normalization.
             green_source_detector[row_start:row_stop, 0] = (

@@ -460,7 +460,7 @@ def _(mo):
     photon_count = mo.ui.number(
         start=1,
         step=100_000,
-        value=5e6,
+        value=1e6,
         label="Photons per MMC run",
     )
     photon_count

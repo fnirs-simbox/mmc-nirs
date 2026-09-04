@@ -110,7 +110,9 @@ def read_history(
         Detected-photon data using MMC-style field names. ``detid``,
         ``ppath``, and ``unitinmm`` are always returned. Optional fields
         ``nscat``, ``mom``, ``p``, ``v``, ``w0``, and ``stokes`` are
-        returned when enabled by ``savedetflag``.
+        returned when enabled by ``savedetflag``. ``detected_counts``
+        and ``saved_counts`` contain the total detected and actually
+        stored photon counts for each history block.
 
     Raises
     ------
@@ -124,6 +126,9 @@ def read_history(
     reference_layout: tuple[int, int, int, int, float] | None = None
     unitinmm_value: float | None = None
     block_count = 0
+
+    detected_counts: list[int] = []
+    saved_counts: list[int] = []
 
     with path.open("rb") as file:
         while True:
@@ -144,7 +149,7 @@ def read_history(
                 detector_count,
                 record_count,
                 _total_photons,
-                _detected_photons,
+                detected_photon_count,
                 saved_photons,
                 unitinmm,
                 seed_bytes,
@@ -160,6 +165,11 @@ def read_history(
                 raise ValueError("Invalid MMC history file: missing MCXH header")
             if version != 1:
                 raise ValueError(f"Unsupported MMC history version {version}; expected version 1")
+            if saved_photons > detected_photon_count:
+                raise ValueError("MMC history reports more saved photons than detected photons")
+
+            detected_counts.append(int(detected_photon_count))
+            saved_counts.append(int(saved_photons))
 
             layout = _record_layout(medium_count, savedetflag, record_count)
             expected_columns = sum(width for _, width in layout)
@@ -228,7 +238,14 @@ def read_history(
         name: np.concatenate(parts, axis=0) for name, parts in chunks.items()
     }
     detected_photons["unitinmm"] = float(unitinmm_value)
-
+    detected_photons["detected_counts"] = np.asarray(
+        detected_counts,
+        dtype=np.int64,
+    )
+    detected_photons["saved_counts"] = np.asarray(
+        saved_counts,
+        dtype=np.int64,
+    )
     return detected_photons
 
 
