@@ -51,19 +51,22 @@ def build_jacobian_mmc_config(
         "method": "elem",
         "issaveexit": 1,
         "issavedet": 1,
-        "isnormalized": 1,
-        "outputtype": "flux",
+        "isnormalized": 2,
+        "outputtype": "fluence",
+        "isreflect": 1,
+        "unitinmm": 1,
+        "basisorder": 1,
     }
 
 
-def validate_mmc_flux(flux: ArrayLike, node_count: int, description: str) -> np.ndarray:
+def validate_mmc_field(flux: ArrayLike, expected_count: int, description: str) -> np.ndarray:
     """Return an MMC flux vector after validating its node dimension."""
-    flux_array = np.asarray(flux, dtype=float)
-    if flux_array.shape != (node_count,):
-        raise ValueError(f"{description} flux must contain one value per mesh node")
-    if not np.all(np.isfinite(flux_array)):
+    field_array = np.asarray(flux, dtype=float)
+    if field_array.shape != (expected_count,):
+        raise ValueError(f"{description} flux must contain {expected_count} values, got {field_array.shape}")
+    if not np.all(np.isfinite(field_array)):
         raise ValueError(f"{description} flux contains non-finite values")
-    return flux_array
+    return field_array
 
 
 def validate_jacobian(

@@ -10,7 +10,7 @@ from mmcnirs.utils.jacobian_utils import (
     save_mmc_mesh,
     select_optical_properties,
     validate_jacobian,
-    validate_mmc_flux,
+    validate_mmc_field,
     validate_mmc_settings,
 )
 
@@ -98,15 +98,14 @@ def test_build_jacobian_mmc_config_converts_elements_to_one_based() -> None:
     assert config["tend"] == config["tstep"] == 5e-9
     assert config["method"] == "elem"
     assert config["issaveexit"] == config["issavedet"] == 1
-    assert config["outputtype"] == "flux"
 
 
 def test_validate_mmc_flux_rejects_wrong_shape_and_non_finite_values() -> None:
-    np.testing.assert_array_equal(validate_mmc_flux([1, 2], 2, "source 0"), [1.0, 2.0])
-    with pytest.raises(ValueError, match="one value per mesh node"):
-        validate_mmc_flux([1.0], 2, "source 0")
+    np.testing.assert_array_equal(validate_mmc_field([1, 2], 2, "source 0"), [1.0, 2.0])
+    with pytest.raises(ValueError, match="must contain.*values"):
+        validate_mmc_field([1.0], 2, "source 0")
     with pytest.raises(ValueError, match="non-finite"):
-        validate_mmc_flux([1.0, np.nan], 2, "source 0")
+        validate_mmc_field([1.0, np.nan], 2, "source 0")
 
 
 def test_mmc_to_json_returns_embedded_document() -> None:

@@ -18,6 +18,7 @@ def run_mmc(
     working_directory: str | Path,
     timeout: float = 180,
     max_trials: int = 5,
+    extra_args=None,
 ) -> subprocess.CompletedProcess[str]:
     """Run MMC for a configuration and return the completed process.
 
@@ -40,6 +41,8 @@ def run_mmc(
 
     executable = runtime.get_mmc_executable().resolve()
     command = [str(executable), "-f", str(resolved_config_path), "-d", "1"]
+    if extra_args:
+        command.extend(str(arg) for arg in extra_args)
     for trial in range(1, max_trials + 1):
         try:
             completed_process = subprocess.run(

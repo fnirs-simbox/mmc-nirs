@@ -276,7 +276,7 @@ def _(
 @app.cell
 def _(mo):
     rebuild_prepared_inputs = mo.ui.checkbox(
-        value=True,
+        value=False,
         label="Rebuild mesh.npz and probe.npz instead of reusing compatible saved files",
     )
     rebuild_prepared_inputs
@@ -591,6 +591,7 @@ def _(
             wavelength=_run_wavelength,
             save_path=_run_save_path,
             overwrite=overwrite_jacobians.value,
+            basis_order=1,
         )
         generation_seconds[_run_wavelength] = time.perf_counter() - start_time
         print(f"{_run_wavelength} wavelength finished.")
