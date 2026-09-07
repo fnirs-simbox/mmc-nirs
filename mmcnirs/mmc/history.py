@@ -206,6 +206,8 @@ def read_history(
                 dtype="<f4",
             ).reshape(saved_photons, record_count)
 
+            chunks.setdefault("_raw_last_column", []).append(records[:, -1].copy())
+
             column = 0
             for name, width in layout:
                 next_column = column + width

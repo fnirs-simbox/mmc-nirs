@@ -51,7 +51,7 @@ def build_jacobian_mmc_config(
         "method": "elem",
         "issaveexit": 1,
         "issavedet": 1,
-        "isnormalized": 2,
+        "isnormalized": 1,
         "outputtype": "fluence",
         "isreflect": 1,
         "unitinmm": 1,

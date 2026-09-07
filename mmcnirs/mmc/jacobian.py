@@ -632,8 +632,78 @@ def _generate_replay_jacobian(
                 source_config_path,
             )
 
+            cpu_args = ["-c", "sse", "-G", "-1"]
+            linux_gpu_args = ["-c", "opencl", "-G", "0"]
             completed = run_mmc(
-                source_config_path, working_directory=temporary_directory, timeout=timeout, extra_args=backend_args
+                source_config_path,
+                working_directory=temporary_directory,
+                timeout=timeout,
+                extra_args=linux_gpu_args,
+            )
+            print("MMC LINUX GPU FORWARD STDOUT:")
+            print(completed.stdout)
+
+            source_history_path = source_stub.with_suffix(".mch")
+
+            # Do NOT call read_cli_output here.
+            replay_config = dict(source_config)
+            replay_stub = temporary_directory / "linux_gpu_replay_test"
+            replay_config_path = replay_stub.with_suffix(".json")
+            replay_config["session"] = replay_stub.name
+            mmc_to_json(replay_config, replay_config_path)
+            completed_replay = run_mmc(
+                replay_config_path,
+                working_directory=temporary_directory,
+                timeout=timeout,
+                extra_args=[
+                    *linux_gpu_args,
+                    "-E",
+                    source_history_path.name,
+                    "-P",
+                    "17",  # for the detector that previously had ~624 photons
+                ],
+            )
+
+            print("MMC LINUX GPU -> GPU REPLAY STDOUT:")
+            print(completed_replay.stdout)
+
+            import struct
+
+            HEADER = struct.Struct("<4s7IfIfi4I")
+
+            with open(source_history_path, "rb") as f:
+                header = HEADER.unpack(f.read(HEADER.size))
+
+            names = [
+                "magic",
+                "version",
+                "medianum",
+                "detnum",
+                "colcount",
+                "totalphoton",
+                "detected",
+                "savedphoton",
+                "unitinmm",
+                "seedbyte",
+                "normalizer",
+                "respin",
+                "srcnum",
+                "savedetflag",
+                "totalsource",
+                "reserved",
+            ]
+
+            for name, value in zip(names, header):
+                print(name, value)
+
+            raise RuntimeError("stop after replay diagnostic")
+
+            completed = run_mmc(
+                source_config_path,
+                working_directory=temporary_directory,
+                timeout=timeout,
+                # extra_args=backend_args
+                extra_args=cpu_args,
             )
             if source_index == 0:
                 print("MMC FORWARD STDOUT:")
@@ -643,6 +713,69 @@ def _generate_replay_jacobian(
 
             # Read forward photon history.
             _, detected_photons = read_cli_output(source_stub)
+
+            if source_index == 0:
+                print("detected photon keys:", detected_photons.keys())
+
+                if "w0" in detected_photons:
+                    w0 = np.asarray(detected_photons["w0"], dtype=float)
+                    print(
+                        "w0 min/median/max:",
+                        np.min(w0),
+                        np.median(w0),
+                        np.max(w0),
+                    )
+                else:
+                    print("NO w0 FIELD IN PYTHON PARSER")
+
+                raw_last = np.asarray(
+                    detected_photons["_raw_last_column"],
+                    dtype=float,
+                )
+
+                print(
+                    "raw last min/median/max:",
+                    raw_last.min(),
+                    np.median(raw_last),
+                    raw_last.max(),
+                )
+
+                if "w0" in detected_photons:
+                    print(
+                        "raw_last vs parsed w0 max abs:",
+                        np.max(
+                            np.abs(
+                                raw_last
+                                - np.asarray(
+                                    detected_photons["w0"],
+                                    dtype=float,
+                                )
+                            )
+                        ),
+                    )
+                ppath = np.asarray(detected_photons["ppath"], dtype=float)
+                unitinmm = float(detected_photons["unitinmm"])
+                mua = np.asarray(inputs.selected_properties[1:, 0], dtype=float)
+
+                w_mmc_python = raw_last * np.exp(-unitinmm * (ppath * mua[None, :]).sum(axis=1))
+                w_current = compute_detected_photon_weights(
+                    detected_photons, optical_properties=inputs.selected_properties
+                )
+                ratio_w = np.divide(w_mmc_python, w_current, out=np.full_like(w_current, np.nan), where=w_current > 0)
+                print(
+                    "MMC-style / current-weight min/median/max:",
+                    np.nanmin(ratio_w),
+                    np.nanmedian(ratio_w),
+                    np.nanmax(ratio_w),
+                )
+
+                L_total = ppath.sum(axis=1) * unitinmm
+                print("all detected geometric path:", np.min(L_total), np.median(L_total), np.max(L_total))
+
+                n = np.asarray(inputs.selected_properties[1:, 3], dtype=float)
+                tof = (ppath * unitinmm * n[None, :]).sum(axis=1) / 299_792_458_000.0
+                print("TOF ns min/median/max:", np.min(tof) * 1e9, np.median(tof) * 1e9, np.max(tof) * 1e9)
+                print("fraction >= 5 ns:", np.mean(tof >= 5e-9))
 
             _validate_complete_detected_history(
                 detected_photons,
@@ -711,18 +844,34 @@ def _generate_replay_jacobian(
                 replay_config_path = replay_stub.with_suffix(".json")
                 mmc_to_json(replay_config, replay_config_path)
 
+                # completed = run_mmc(
+                #    replay_config_path,
+                #    working_directory=temporary_directory,
+                #    timeout=timeout,
+                #    extra_args=[
+                #        #*backend_args,
+                #        #"-c", "sse",
+                #        #"-G", "-1",
+                #        "-E", source_history_path.name,
+                #        "-P", str(detector_index + 1),
+                #        #"-O", "F",
+                #    ],
+                # )
                 completed = run_mmc(
                     replay_config_path,
                     working_directory=temporary_directory,
                     timeout=timeout,
                     extra_args=[
-                        *backend_args,
+                        # *backend_args,
+                        "-c",
+                        "sse",
+                        "-G",
+                        "-1",
                         "-E",
                         source_history_path.name,
                         "-P",
                         str(detector_index + 1),
-                        "-O",
-                        "L",
+                        # "-O", "F",
                     ],
                 )
                 if source_index == 0:
