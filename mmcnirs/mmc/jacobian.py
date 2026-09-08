@@ -62,35 +62,23 @@ def _validate_complete_detected_history(
     source_index: int,
 ) -> None:
     """Require all detected photons to be present for absolute detector measurements."""
-    detected_counts = np.asarray(
-        detected_photons["detected_counts"],
-        dtype=np.int64,
-    ).reshape(-1)
-    saved_counts = np.asarray(
-        detected_photons["saved_counts"],
-        dtype=np.int64,
-    ).reshape(-1)
+    detected_counts = np.asarray(detected_photons["detected_counts"], dtype=np.int64).reshape(-1)
+    saved_counts = np.asarray(detected_photons["saved_counts"], dtype=np.int64).reshape(-1)
 
     if detected_counts.shape != saved_counts.shape:
         raise ValueError("MMC history detected/saved count arrays must have matching shapes")
-
     if np.any(detected_counts < 0) or np.any(saved_counts < 0):
         raise ValueError("MMC history photon counts must be non-negative")
-
     if np.any(saved_counts > detected_counts):
         raise ValueError("MMC history reports more saved photons than detected photons")
 
     truncated = saved_counts < detected_counts
     if np.any(truncated):
         block = int(np.flatnonzero(truncated)[0])
-
         raise RuntimeError(
-            "MMC detected-photon history was truncated for "
-            f"source {source_index}, block {block}: "
-            f"detected={detected_counts[block]}, "
-            f"saved={saved_counts[block]}. "
-            "Green_sd and mea0 require the complete detected-photon history; "
-            "increase MMC maxdetphoton."
+            f"MMC detected-photon history was truncated for source {source_index}, block {block}: "
+            f"detected={detected_counts[block]}, saved={saved_counts[block]}. "
+            "Green_sd and mea0 require the complete detected-photon history; increase MMC maxdetphoton."
         )
 
 
@@ -106,16 +94,7 @@ def _compute_element_volumes(
     p2 = nodes[elements[:, 2]]
     p3 = nodes[elements[:, 3]]
 
-    return (
-        np.abs(
-            np.einsum(
-                "ij,ij->i",
-                p1 - p0,
-                np.cross(p2 - p0, p3 - p0),
-            )
-        )
-        / 6.0
-    )
+    return np.abs(np.einsum("ij,ij->i", p1 - p0, np.cross(p2 - p0, p3 - p0))) / 6.0
 
 
 def _calculate_node_volumes(
@@ -149,11 +128,7 @@ def _calculate_node_volumes(
     # assign volume to each node depending on it's tetrahedras
     node_volumes = np.zeros(node_count, dtype=float)
     for local_node_index in range(4):
-        np.add.at(
-            node_volumes,
-            element_array[:, local_node_index],
-            element_volumes / 4.0,
-        )
+        np.add.at(node_volumes, element_array[:, local_node_index], element_volumes / 4.0)
 
     if np.any(node_volumes <= 0):
         raise ValueError("Every mesh node must have a positive associated volume")
@@ -219,12 +194,12 @@ def _calculate_jacobian(
 
     volumes = np.asarray(node_volumes, dtype=float).reshape(-1)
 
-    normalizers = np.asarray(green_source_detector, dtype=float).reshape(-1)
-    if normalizers.shape != (source_count * detector_count,):
+    green_source_detector = np.asarray(green_source_detector, dtype=float).reshape(-1)
+    if green_source_detector.shape != (source_count * detector_count,):
         raise ValueError("Green_sd must contain one value per source-detector pair")
-    invalid_normalizers = ~np.isfinite(normalizers) | (normalizers < 0)
-    if np.any(invalid_normalizers):
-        row = int(np.flatnonzero(invalid_normalizers)[0])
+    invalid_green_source_detector = ~np.isfinite(green_source_detector) | (green_source_detector < 0)
+    if np.any(invalid_green_source_detector):
+        row = int(np.flatnonzero(invalid_green_source_detector)[0])
         source_index, detector_index = divmod(row, detector_count)
         raise ValueError(f"Green_sd must be finite and positive for source {source_index}, detector {detector_index}")
 
@@ -233,11 +208,13 @@ def _calculate_jacobian(
         for detector_index in range(detector_count):
             row = source_index * detector_count + detector_index
 
-            if normalizers[row] == 0:
+            if green_source_detector[row] == 0:
                 jacobian[row] = 0.0
                 continue
 
-            jacobian[row] = -volumes * green_source[source_index] * green_detector[detector_index] / normalizers[row]
+            jacobian[row] = (
+                -volumes * green_source[source_index] * green_detector[detector_index] / green_source_detector[row]
+            )
     return jacobian
 
 
@@ -252,17 +229,18 @@ def _calculate_detected_mean_partial_pathlengths(
     weight_sums = np.asarray(detector_weight_sums, dtype=float)
     detector_ids = np.asarray(detected_photons["detid"], dtype=np.intp)
     partial_paths = np.asarray(detected_photons["ppath"], dtype=float)
-    unitinmm = float(detected_photons.get("unitinmm", 1.0))
+
+    if "unitinmm" not in detected_photons:
+        raise ValueError("detected_photons must contain 'unitinmm'")
+    unitinmm = detected_photons["unitinmm"]
+    unitinmm = float(unitinmm)
+    if not np.isfinite(unitinmm) or unitinmm <= 0:
+        raise ValueError("unitinmm must be a finite positive number")
 
     partial_paths_mm = partial_paths * unitinmm
     medium_count = partial_paths.shape[1]
 
-    result = np.full(
-        (detector_count, medium_count),
-        np.nan,
-        dtype=float,
-    )
-
+    result = np.full((detector_count, medium_count), np.nan, dtype=float)
     for detector_index in range(detector_count):
         mask = detector_ids == detector_index + 1
         if weight_sums[detector_index] == 0:
@@ -287,7 +265,6 @@ def generate_jacobian(
     overwrite: bool = False,
     timeout: float = 900,
     basis_order: int = 1,
-    replay: bool = False,
     compute_backend: str | None = None,
     gpu_id: int | None = None,
 ) -> dict[str, np.ndarray]:
@@ -340,18 +317,6 @@ def generate_jacobian(
     base_config["basisorder"] = basis_order
     base_config["seed"] = 123456789
 
-    if replay:
-        result = _generate_replay_jacobian(
-            inputs=inputs,
-            base_config=base_config,
-            timeout=float(timeout),
-            detector_radius_mm=_DETECTOR_RADIUS_MM,
-            backend_args=backend_args,
-        )
-        if resolved_save_path is not None:
-            save_jacobian_result(resolved_save_path, result)
-        return result
-
     field_count = len(inputs.nodes) if basis_order == 1 else len(inputs.elements)
     print(inputs.selected_properties)
     print(base_config["prop"])
@@ -369,18 +334,14 @@ def generate_jacobian(
 
     green_source = np.zeros((source_count, field_count), dtype=float)
     green_detector = np.zeros((detector_count, field_count), dtype=float)
-    green_source_detector = np.zeros((row_count, 1), dtype=float)
+    green_source_detector_reflectance = np.zeros((row_count, 1), dtype=float)
     # Diagnostic alternative denominator:
     # source volumetric fluence interpolated exactly at detector position.
     green_source_detector_fluence = np.zeros((row_count, 1), dtype=float)
     measurements_zero = np.zeros((row_count, 1), dtype=float)
 
     medium_count = inputs.selected_properties.shape[0] - 1
-    replay_mean_partial_pathlengths = np.full(
-        (row_count, medium_count),
-        np.nan,
-        dtype=float,
-    )
+    detected_mean_partial_pathlengths = np.full((row_count, medium_count), np.nan, dtype=float)
 
     with TemporaryDirectory(prefix="mmcnirs-jacobian-") as temporary_directory_name:
         temporary_directory = Path(temporary_directory_name)
@@ -398,7 +359,12 @@ def generate_jacobian(
             config_path = output_stub.with_suffix(".json")
             mmc_to_json(source_config, config_path)
             try:
-                run_mmc(config_path, working_directory=temporary_directory, timeout=float(timeout))
+                run_mmc(
+                    config_path,
+                    working_directory=temporary_directory,
+                    timeout=float(timeout),
+                    extra_args=backend_args,
+                )
             except TimeoutError as error:
                 raise TimeoutError(
                     f"MMC failed while computing source {source_index} ({source_index + 1}/{source_count}): {error}"
@@ -440,7 +406,7 @@ def generate_jacobian(
                 detector_weight_sums,
                 detector_count,
             )
-            replay_mean_partial_pathlengths[row_start:row_stop] = detector_mean_partial_pathlengths
+            detected_mean_partial_pathlengths[row_start:row_stop] = detector_mean_partial_pathlengths
 
             detector_ids = np.asarray(detected_photons["detid"], dtype=int)
             for detector_index in range(detector_count):
@@ -463,7 +429,7 @@ def generate_jacobian(
                 warnings.warn("Unselected " + message, RuntimeWarning, stacklevel=2)
 
             # Baseline source-detector diffuse reflectance used for Rytov normalization.
-            green_source_detector[row_start:row_stop, 0] = (
+            green_source_detector_reflectance[row_start:row_stop, 0] = (
                 detector_weight_sums / _DETECTOR_AREA_MM2 / inputs.photon_count
             )
 
@@ -481,7 +447,9 @@ def generate_jacobian(
             config_path = output_stub.with_suffix(".json")
             mmc_to_json(detector_config, config_path)
             try:
-                run_mmc(config_path, working_directory=temporary_directory, timeout=float(timeout))
+                run_mmc(
+                    config_path, working_directory=temporary_directory, timeout=float(timeout), extra_args=backend_args
+                )
             except TimeoutError as error:
                 raise TimeoutError(
                     f"MMC failed while computing detector {detector_index} "
@@ -493,59 +461,49 @@ def generate_jacobian(
             green_detector[detector_index] = detector_fluence
 
     # Current reflectance-normalized construction
-    jacobian = _calculate_jacobian(green_source, green_detector, green_source_detector, node_volumes)
+    jacobian_reflectance = _calculate_jacobian(
+        green_source, green_detector, green_source_detector_reflectance, node_volumes
+    )
     # Diagnostic: use volumetric source fluence at detector location
-    jacobian_fluence_denominator = _calculate_jacobian(
-        green_source, green_detector, green_source_detector_fluence, node_volumes
+    jacobian_fluence = _calculate_jacobian(green_source, green_detector, green_source_detector_fluence, node_volumes)
+
+    jacobian_reflectance_effective_pathlength = -jacobian_reflectance.sum(axis=1, keepdims=True)
+    jacobian_fluence_effective_pathlength = -jacobian_fluence.sum(axis=1, keepdims=True)
+
+    detected_mean_pathlength = detected_mean_partial_pathlengths.sum(axis=1, keepdims=True)
+
+    pathlength_ratio_reflectance = np.divide(
+        jacobian_reflectance_effective_pathlength,
+        detected_mean_pathlength,
+        out=np.full_like(jacobian_reflectance_effective_pathlength, np.nan),
+        where=detected_mean_pathlength > 0,
     )
-
-    jacobian_effective_pathlength = -jacobian.sum(axis=1, keepdims=True)
-    jacobian_fluence_effective_pathlength = -jacobian_fluence_denominator.sum(axis=1, keepdims=True)
-
-    replay_mean_pathlength = replay_mean_partial_pathlengths.sum(axis=1, keepdims=True)
-
-    pathlength_ratio = np.divide(
-        jacobian_effective_pathlength,
-        replay_mean_pathlength,
-        out=np.full_like(jacobian_effective_pathlength, np.nan),
-        where=replay_mean_pathlength > 0,
-    )
-    pathlength_ratio_fluence_denominator = np.divide(
+    pathlength_ratio_fluence = np.divide(
         jacobian_fluence_effective_pathlength,
-        replay_mean_pathlength,
+        detected_mean_pathlength,
         out=np.full_like(jacobian_fluence_effective_pathlength, np.nan),
-        where=replay_mean_pathlength > 0,
+        where=detected_mean_pathlength > 0,
     )
     Green_sd_fluence_over_reflectance = np.divide(
         green_source_detector_fluence,
-        green_source_detector,
-        out=np.full_like(
-            green_source_detector_fluence,
-            np.nan,
-        ),
-        where=green_source_detector > 0,
-    )
-    channel_normalization = np.divide(
-        replay_mean_pathlength,
-        jacobian_effective_pathlength,
-        out=np.full_like(replay_mean_pathlength, np.nan),
-        where=jacobian_effective_pathlength > 0,
+        green_source_detector_reflectance,
+        out=np.full_like(green_source_detector_fluence, np.nan),
+        where=green_source_detector_reflectance > 0,
     )
     result = {
         "Green_d": green_detector,
         "Green_s": green_source,
-        "Green_sd": green_source_detector,
+        "Green_sd_reflectance": green_source_detector_reflectance,
         "Green_sd_fluence": green_source_detector_fluence,
-        "J": jacobian,
-        "J_fluence_denominator": jacobian_fluence_denominator,
-        "replay_mean_pathlength": replay_mean_pathlength,
-        "jacobian_effective_pathlength": jacobian_effective_pathlength,
+        "J_reflectance": jacobian_reflectance,
+        "J_fluence": jacobian_fluence,
+        "detected_mean_pathlength": detected_mean_pathlength,
+        "jacobian_reflectance_effective_pathlength": jacobian_reflectance_effective_pathlength,
         "jacobian_fluence_effective_pathlength": jacobian_fluence_effective_pathlength,
-        "pathlength_ratio": pathlength_ratio,
-        "pathlength_ratio_fluence_denominator": pathlength_ratio_fluence_denominator,
+        "pathlength_ratio_reflectance": pathlength_ratio_reflectance,
+        "pathlength_ratio_fluence": pathlength_ratio_fluence,
         "Green_sd_fluence_over_reflectance": Green_sd_fluence_over_reflectance,
-        "channel_normalization": channel_normalization,
-        "replay_mean_partial_pathlengths": replay_mean_partial_pathlengths,
+        "detected_mean_partial_pathlengths": detected_mean_partial_pathlengths,
         "channelidx": inputs.channel_indices,
         "mea0": measurements_zero,
         "sourcepos": inputs.source_positions,
@@ -558,363 +516,3 @@ def generate_jacobian(
     if resolved_save_path is not None:
         save_jacobian_result(resolved_save_path, result)
     return result
-
-
-def _generate_replay_jacobian(
-    inputs,
-    base_config: Mapping[str, Any],
-    timeout: float,
-    detector_radius_mm: float,
-    backend_args: list[str] | None = None,
-) -> dict[str, np.ndarray]:
-    backend_args = [] if backend_args is None else list(backend_args)
-    """Generate absorption Jacobian using MMC detected-photon replay."""
-    node_volumes = _calculate_node_volumes(inputs.nodes, inputs.elements)
-    source_count = len(inputs.source_positions)
-    detector_count = len(inputs.detector_positions)
-    node_count = len(inputs.nodes)
-    row_count = source_count * detector_count
-
-    detector_positions_with_radius = np.column_stack(
-        (
-            inputs.detector_positions,
-            np.full(detector_count, detector_radius_mm),
-        )
-    )
-
-    # Full source-major matrix.
-    # Unselected source-detector rows remain zero.
-    jacobian = np.zeros((row_count, node_count), dtype=float)
-    measurements_zero = np.zeros((row_count, 1), dtype=float)
-    detected_photon_counts = np.zeros(row_count, dtype=np.int64)
-    detected_photon_ess = np.zeros(row_count, dtype=float)
-    medium_count = inputs.selected_properties.shape[0] - 1
-    replay_mean_partial_pathlengths = np.full((row_count, medium_count), np.nan, dtype=float)
-    selected_rows = np.unique(np.asarray(inputs.channel_indices, dtype=int).reshape(-1))
-    with TemporaryDirectory(prefix="mmcnirs-replay-jacobian-") as temporary_directory_name:
-        temporary_directory = Path(temporary_directory_name)
-
-        for source_index in tqdm(
-            range(source_count),
-            desc="MMC replay sources",
-            unit="source",
-        ):
-            # Which selected channels belong to this source?
-            source_row_start = source_index * detector_count
-            source_row_stop = source_row_start + detector_count
-
-            source_selected_rows = [row for row in selected_rows if source_row_start <= row < source_row_stop]
-
-            # If this source has no selected channels, skip it.
-            if not source_selected_rows:
-                continue
-
-            source_stub = temporary_directory / f"source_{source_index:04d}"
-
-            source_config = base_config | {
-                "srcpos": inputs.source_positions[source_index].tolist(),
-                "e0": int(inputs.source_elements[source_index]) + 1,
-                "srcdir": inputs.source_directions[source_index].tolist(),
-                "detpos": detector_positions_with_radius.tolist(),
-                # CRITICAL for replay
-                "issaveseed": 1,
-                "issavedet": 1,
-                "issaveexit": 1,
-                # forward output itself is not important here,
-                # but fluence is fine
-                "outputtype": "fluence",
-            }
-
-            source_config_path = source_stub.with_suffix(".json")
-
-            mmc_to_json(
-                source_config,
-                source_config_path,
-            )
-
-            cpu_args = ["-c", "sse", "-G", "-1"]
-            linux_gpu_args = ["-c", "opencl", "-G", "0"]
-            completed = run_mmc(
-                source_config_path,
-                working_directory=temporary_directory,
-                timeout=timeout,
-                extra_args=linux_gpu_args,
-            )
-            print("MMC LINUX GPU FORWARD STDOUT:")
-            print(completed.stdout)
-
-            source_history_path = source_stub.with_suffix(".mch")
-
-            # Do NOT call read_cli_output here.
-            replay_config = dict(source_config)
-            replay_stub = temporary_directory / "linux_gpu_replay_test"
-            replay_config_path = replay_stub.with_suffix(".json")
-            replay_config["session"] = replay_stub.name
-            mmc_to_json(replay_config, replay_config_path)
-            completed_replay = run_mmc(
-                replay_config_path,
-                working_directory=temporary_directory,
-                timeout=timeout,
-                extra_args=[
-                    *linux_gpu_args,
-                    "-E",
-                    source_history_path.name,
-                    "-P",
-                    "17",  # for the detector that previously had ~624 photons
-                ],
-            )
-
-            print("MMC LINUX GPU -> GPU REPLAY STDOUT:")
-            print(completed_replay.stdout)
-
-            import struct
-
-            HEADER = struct.Struct("<4s7IfIfi4I")
-
-            with open(source_history_path, "rb") as f:
-                header = HEADER.unpack(f.read(HEADER.size))
-
-            names = [
-                "magic",
-                "version",
-                "medianum",
-                "detnum",
-                "colcount",
-                "totalphoton",
-                "detected",
-                "savedphoton",
-                "unitinmm",
-                "seedbyte",
-                "normalizer",
-                "respin",
-                "srcnum",
-                "savedetflag",
-                "totalsource",
-                "reserved",
-            ]
-
-            for name, value in zip(names, header):
-                print(name, value)
-
-            raise RuntimeError("stop after replay diagnostic")
-
-            completed = run_mmc(
-                source_config_path,
-                working_directory=temporary_directory,
-                timeout=timeout,
-                # extra_args=backend_args
-                extra_args=cpu_args,
-            )
-            if source_index == 0:
-                print("MMC FORWARD STDOUT:")
-                print(completed.stdout)
-                print("MMC FORWARD STDERR:")
-                print(completed.stderr)
-
-            # Read forward photon history.
-            _, detected_photons = read_cli_output(source_stub)
-
-            if source_index == 0:
-                print("detected photon keys:", detected_photons.keys())
-
-                if "w0" in detected_photons:
-                    w0 = np.asarray(detected_photons["w0"], dtype=float)
-                    print(
-                        "w0 min/median/max:",
-                        np.min(w0),
-                        np.median(w0),
-                        np.max(w0),
-                    )
-                else:
-                    print("NO w0 FIELD IN PYTHON PARSER")
-
-                raw_last = np.asarray(
-                    detected_photons["_raw_last_column"],
-                    dtype=float,
-                )
-
-                print(
-                    "raw last min/median/max:",
-                    raw_last.min(),
-                    np.median(raw_last),
-                    raw_last.max(),
-                )
-
-                if "w0" in detected_photons:
-                    print(
-                        "raw_last vs parsed w0 max abs:",
-                        np.max(
-                            np.abs(
-                                raw_last
-                                - np.asarray(
-                                    detected_photons["w0"],
-                                    dtype=float,
-                                )
-                            )
-                        ),
-                    )
-                ppath = np.asarray(detected_photons["ppath"], dtype=float)
-                unitinmm = float(detected_photons["unitinmm"])
-                mua = np.asarray(inputs.selected_properties[1:, 0], dtype=float)
-
-                w_mmc_python = raw_last * np.exp(-unitinmm * (ppath * mua[None, :]).sum(axis=1))
-                w_current = compute_detected_photon_weights(
-                    detected_photons, optical_properties=inputs.selected_properties
-                )
-                ratio_w = np.divide(w_mmc_python, w_current, out=np.full_like(w_current, np.nan), where=w_current > 0)
-                print(
-                    "MMC-style / current-weight min/median/max:",
-                    np.nanmin(ratio_w),
-                    np.nanmedian(ratio_w),
-                    np.nanmax(ratio_w),
-                )
-
-                L_total = ppath.sum(axis=1) * unitinmm
-                print("all detected geometric path:", np.min(L_total), np.median(L_total), np.max(L_total))
-
-                n = np.asarray(inputs.selected_properties[1:, 3], dtype=float)
-                tof = (ppath * unitinmm * n[None, :]).sum(axis=1) / 299_792_458_000.0
-                print("TOF ns min/median/max:", np.min(tof) * 1e9, np.median(tof) * 1e9, np.max(tof) * 1e9)
-                print("fraction >= 5 ns:", np.mean(tof >= 5e-9))
-
-            _validate_complete_detected_history(
-                detected_photons,
-                source_index,
-            )
-
-            photon_weights = compute_detected_photon_weights(
-                detected_photons,
-                optical_properties=(inputs.selected_properties),
-            )
-
-            detector_weight_sums = _sum_detected_photon_weights(
-                detected_photons,
-                photon_weights,
-                detector_count,
-            )
-
-            # baseline intensity
-            measurements_zero[source_row_start:source_row_stop, 0] = detector_weight_sums / inputs.photon_count
-
-            # existing replay path-length diagnostic
-            detector_mean_partial_pathlengths = _calculate_detected_mean_partial_pathlengths(
-                detected_photons,
-                photon_weights,
-                detector_weight_sums,
-                detector_count,
-            )
-
-            replay_mean_partial_pathlengths[source_row_start:source_row_stop] = detector_mean_partial_pathlengths
-
-            detector_ids = np.asarray(
-                detected_photons["detid"],
-                dtype=int,
-            )
-
-            for detector_index in range(detector_count):
-                row = source_index * detector_count + detector_index
-                mask = detector_ids == detector_index + 1
-                detected_photon_counts[row] = np.count_nonzero(mask)
-                w = photon_weights[mask]
-                if w.size and np.sum(w * w) > 0:
-                    detected_photon_ess[row] = np.sum(w) ** 2 / np.sum(w * w)
-
-            # The forward source run should have created:
-            source_history_path = source_stub.with_suffix(".mch")
-
-            if not source_history_path.is_file():
-                raise RuntimeError(
-                    f"MMC forward replay run did not create {source_history_path.name}. Check issaveseed/DoSaveSeed."
-                )
-
-            # Replay ONLY selected detectors for this source.
-            for row in source_selected_rows:
-                detector_index = row - source_row_start
-
-                if detector_weight_sums[detector_index] <= 0:
-                    raise RuntimeError(
-                        "Selected replay channel has zero detected weight: "
-                        f"source={source_index}, detector={detector_index}"
-                    )
-
-                replay_stub = temporary_directory / (f"replay_s{source_index:04d}_d{detector_index:04d}")
-
-                # Same physical forward configuration.
-                replay_config = dict(source_config)
-                replay_config_path = replay_stub.with_suffix(".json")
-                mmc_to_json(replay_config, replay_config_path)
-
-                # completed = run_mmc(
-                #    replay_config_path,
-                #    working_directory=temporary_directory,
-                #    timeout=timeout,
-                #    extra_args=[
-                #        #*backend_args,
-                #        #"-c", "sse",
-                #        #"-G", "-1",
-                #        "-E", source_history_path.name,
-                #        "-P", str(detector_index + 1),
-                #        #"-O", "F",
-                #    ],
-                # )
-                completed = run_mmc(
-                    replay_config_path,
-                    working_directory=temporary_directory,
-                    timeout=timeout,
-                    extra_args=[
-                        # *backend_args,
-                        "-c",
-                        "sse",
-                        "-G",
-                        "-1",
-                        "-E",
-                        source_history_path.name,
-                        "-P",
-                        str(detector_index + 1),
-                        # "-O", "F",
-                    ],
-                )
-                if source_index == 0:
-                    print("MMC REPLAY STDOUT:")
-                    print(completed.stdout)
-                    print("MMC REPLAY STDERR:")
-                    print(completed.stderr)
-
-                replay_field = read_flux(replay_stub.with_suffix(".dat"))
-
-                replay_field = validate_mmc_field(
-                    replay_field,
-                    node_count,
-                    (f"replay source {source_index}, detector {detector_index}"),
-                )
-
-                # Official mmcjmua.m:
-                #   outputtype = 'wl'
-                #   Ja = -jacob.data
-                jacobian[row] = -replay_field
-
-    replay_mean_pathlength = replay_mean_partial_pathlengths.sum(axis=1, keepdims=True)
-    jacobian_effective_pathlength = -jacobian.sum(axis=1, keepdims=True)
-    pathlength_ratio = np.divide(
-        jacobian_effective_pathlength,
-        replay_mean_pathlength,
-        out=np.full_like(replay_mean_pathlength, np.nan),
-        where=replay_mean_pathlength > 0,
-    )
-
-    return {
-        "J": jacobian,
-        "node_volumes": node_volumes,
-        "replay_mean_pathlength": replay_mean_pathlength,
-        "jacobian_effective_pathlength": jacobian_effective_pathlength,
-        "pathlength_ratio": pathlength_ratio,
-        "replay_mean_partial_pathlengths": replay_mean_partial_pathlengths,
-        "channelidx": inputs.channel_indices,
-        "mea0": measurements_zero,
-        "sourcepos": inputs.source_positions,
-        "detpos": detector_positions_with_radius,
-        "detnorms": inputs.detector_directions,
-        "sourcedir": inputs.source_directions,
-        "detected_photon_counts": detected_photon_counts,
-        "detected_photon_ess": detected_photon_ess,
-    }

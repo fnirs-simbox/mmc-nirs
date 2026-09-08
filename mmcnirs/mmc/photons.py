@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: MIT
 
 import numpy as np
+import warnings
 
 
 def compute_detected_photon_weights(
@@ -42,6 +43,12 @@ def compute_detected_photon_weights(
     if not isinstance(detected_photons, dict):
         raise TypeError("detected_photons must be a dictionary")
 
+    if "w0" not in detected_photons:
+        raise ValueError("detected_photons must contain 'w0'")
+
+    if not np.allclose(detected_photons["w0"], 1.0, rtol=0.0, atol=1e-7):
+        warnings.warn("Detected photons have non-unit launch weights; verify source configuration.")
+
     if "ppath" not in detected_photons:
         raise ValueError("detected_photons must contain 'ppath'")
 
@@ -52,6 +59,14 @@ def compute_detected_photon_weights(
             raise ValueError(
                 "optical_properties must be provided when detected_photons does not contain 'prop'"
             ) from exc
+
+    if unitinmm is None:
+        if "unitinmm" not in detected_photons:
+            raise ValueError("detected_photons must contain 'unitinmm'")
+        unitinmm = detected_photons["unitinmm"]
+    unitinmm = float(unitinmm)
+    if not np.isfinite(unitinmm) or unitinmm <= 0:
+        raise ValueError("unitinmm must be a finite positive number")
 
     ppath = np.asarray(detected_photons["ppath"], dtype=float)
     properties = np.asarray(optical_properties, dtype=float)
@@ -72,13 +87,6 @@ def compute_detected_photon_weights(
     if ppath.shape[1] != n_media:
         raise ValueError(f"ppath describes {ppath.shape[1]} media, but optical_properties describes {n_media}")
 
-    if unitinmm is None:
-        unitinmm = detected_photons.get("unitinmm", 1.0)
-
-    unitinmm = float(unitinmm)
-    if not np.isfinite(unitinmm) or unitinmm <= 0:
-        raise ValueError("unitinmm must be a finite positive number")
-
     # Row 0 is the background medium and is not represented in ppath.
     absorption_coefficients = properties[1:, 0]
 
@@ -86,12 +94,17 @@ def compute_detected_photon_weights(
     # accumulate Beer-Lambert attenuation for each detected photon.
     optical_depth = (ppath @ absorption_coefficients) * unitinmm
 
-    initial_weights = detected_photons.get("w0")
-    if initial_weights is None:
-        initial_weights = np.ones(ppath.shape[0], dtype=float)
-    else:
-        initial_weights = np.asarray(initial_weights, dtype=float)
-        if initial_weights.shape != (ppath.shape[0],):
-            raise ValueError("w0 must contain one initial weight per detected photon")
+    try:
+        initial_weights = np.asarray(detected_photons["w0"], dtype=float)
+    except KeyError as exc:
+        raise ValueError(
+            "detected_photons must contain 'w0'; "
+            "MMC detected-photon history is expected to save the initial packet weight"
+        ) from exc
+
+    if initial_weights.shape != (ppath.shape[0],):
+        raise ValueError("w0 must contain one initial weight per detected photon")
+    if not np.all(np.isfinite(initial_weights)):
+        raise ValueError("w0 must contain only finite values")
 
     return initial_weights * np.exp(-optical_depth)

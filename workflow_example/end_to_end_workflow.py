@@ -438,7 +438,10 @@ def _(experiment_config, mo, prepared_probe, registration_figure):
 
 @app.cell
 def _(experiment_config, json):
-    optical_properties_path = experiment_config["experiment_dir"] / experiment_config["filepaths"]["optical_properties"]
+    # optical_properties_path = experiment_config["experiment_dir"] /
+    # experiment_config["filepaths"]["optical_properties"]
+    optical_properties_path = experiment_config["experiment_dir"] / "optical_properties_highCSF.json"
+
     with optical_properties_path.open("r", encoding="utf-8") as optical_properties_file:
         optical_properties = json.load(optical_properties_file)
 
@@ -592,7 +595,6 @@ def _(
             save_path=_run_save_path,
             overwrite=overwrite_jacobians.value,
             basis_order=1,
-            replay=True,
         )
         generation_seconds[_run_wavelength] = time.perf_counter() - start_time
         print(f"{_run_wavelength} wavelength finished.")
