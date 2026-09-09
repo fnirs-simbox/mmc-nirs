@@ -100,12 +100,10 @@ def prepare_probe(
         - ``probe_settings.short_separation_arg``: a finite, non-negative float
           distance in millimetres when the flag is ``"distance"``; when the
           flag is ``"index"``, a list of zero-based channel indices.
-        - ``probe_settings.embedding_step``: positive scalar embedding distance
-          in millimetres applied per iteration.
-        - ``probe_settings.max_embedding_steps``: non-negative integer maximum
-          number of embedding iterations.
+        - ``probe_settings.embedding_step``: positive scalar approximate embedding distance
+          between embedded optode (inside mesh) and mesh surface in millimetres.
 
-        ``probe_settings`` and all six of its fields are required even when a
+        ``probe_settings`` and all five of its fields are required even when a
         previously prepared probe archive is reused.
     plot : bool, default=False
         Whether to create the registration diagnostic and save it as
@@ -126,8 +124,6 @@ def prepare_probe(
         shape ``(n_channels, 2)``; and separation-index fields are one-dimensional.
     """
     probe_settings = validate_probe_settings(experiment_config)
-    normalized_flag = probe_settings["short_separation_flag"]
-    short_separation_arg = probe_settings["short_separation_arg"]
     mesh = validate_prepared_mesh(prepared_mesh)
 
     archive_path = resolve_prepared_input_path(experiment_config, "probefile")
@@ -137,15 +133,9 @@ def prepare_probe(
             _save_probe_registration_diagnostic(mesh, probe, archive_path)
         return probe
 
-    pairs = as_channel_pairing_array(channel_pairings)
-    if normalized_flag == "index":
-        short_indices = np.asarray(short_separation_arg, dtype=np.intp)
-        if np.any(short_indices < 0) or np.any(short_indices >= len(pairs)):
-            raise ValueError("short-separation channel indices are out of range")
-
     (
-        registered_sources,
-        registered_detectors,
+        source_positions,
+        detector_positions,
         source_directions,
         detector_directions,
         source_elements,
@@ -158,28 +148,25 @@ def prepare_probe(
         probe_orientation=probe_settings["probe_orientation"],
         probe_units=probe_settings["probe_units"],
         embedding_step=probe_settings["embedding_step"],
-        max_embedding_steps=probe_settings["max_embedding_steps"],
     )
 
-    normalized_pairings = normalize_channel_pairings(
-        pairs,
-        len(registered_sources),
-        len(registered_detectors),
-    )
-    source_indices = normalized_pairings[:, 0]
-    detector_indices = normalized_pairings[:, 1]
-
-    if normalized_flag == "distance":
-        distances = np.linalg.norm(
-            registered_sources[source_indices] - registered_detectors[detector_indices],
-            axis=1,
-        )
-        short_indices = np.flatnonzero(distances <= short_separation_arg)
+    pairs = as_channel_pairing_array(channel_pairings)
+    normalized_pairings = normalize_channel_pairings(pairs, len(source_positions), len(detector_positions))
+    if probe_settings["short_separation_flag"] == "index":
+        short_indices = np.asarray(probe_settings["short_separation_arg"], dtype=np.intp)
+        if np.any(short_indices < 0) or np.any(short_indices >= len(pairs)):
+            raise ValueError("short-separation channel indices are out of range")
+    elif probe_settings["short_separation_flag"] == "distance":
+        source_indices, detector_indices = normalized_pairings[:, 0], normalized_pairings[:, 1]
+        distances = np.linalg.norm(source_positions[source_indices] - detector_positions[detector_indices], axis=1)
+        short_indices = np.flatnonzero(distances <= probe_settings["short_separation_arg"])
+    else:
+        raise ValueError(f"normalization_flag {probe_settings['short_separation_flag']} unknown.")
 
     long_indices = np.setdiff1d(np.arange(len(pairs), dtype=np.intp), short_indices)
     probe = {
-        "sourcepos": registered_sources,
-        "detpos": registered_detectors,
+        "sourcepos": source_positions,
+        "detpos": detector_positions,
         "sourcedir": source_directions,
         "detnorms": detector_directions,
         "source_elements": source_elements,

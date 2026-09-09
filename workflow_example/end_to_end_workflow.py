@@ -380,8 +380,7 @@ def _(
     channels are {separation_rule}.
 
     Registration uses an embedding step of
-    `{probe_settings["embedding_step"]} mm` and at most
-    `{probe_settings["max_embedding_steps"]}` embedding steps.
+    `{probe_settings["embedding_step"]} mm.`
 
     These units, orientation, and short-separation rules were recovered
     from the SD file and/or the associated study documentation. There is no
@@ -438,9 +437,7 @@ def _(experiment_config, mo, prepared_probe, registration_figure):
 
 @app.cell
 def _(experiment_config, json):
-    # optical_properties_path = experiment_config["experiment_dir"] /
-    # experiment_config["filepaths"]["optical_properties"]
-    optical_properties_path = experiment_config["experiment_dir"] / "optical_properties_highCSF.json"
+    optical_properties_path = experiment_config["experiment_dir"] / experiment_config["filepaths"]["optical_properties"]
 
     with optical_properties_path.open("r", encoding="utf-8") as optical_properties_file:
         optical_properties = json.load(optical_properties_file)
@@ -595,6 +592,7 @@ def _(
             save_path=_run_save_path,
             overwrite=overwrite_jacobians.value,
             basis_order=1,
+            timeout=15,
         )
         generation_seconds[_run_wavelength] = time.perf_counter() - start_time
         print(f"{_run_wavelength} wavelength finished.")
@@ -612,7 +610,7 @@ def _(
 ):
     output_rows = []
     for _result_wavelength, _result_save_path in zip(wavelengths, jacobian_paths, strict=True):
-        jacobian = generated_jacobians[_result_wavelength]["J"]
+        jacobian = generated_jacobians[_result_wavelength]["J_fluence"]
         output_rows.append(
             {
                 "wavelength_nm": _result_wavelength,
@@ -660,8 +658,8 @@ def _(
         sensitivity_figures[_plot_wavelength] = plot_tissue_sensitivity(
             prepared_mesh=prepared_mesh,
             prepared_probe=prepared_probe,
-            jacobian=generated_jacobians[_plot_wavelength]["J"],
-            channel_selection="all",
+            jacobian=generated_jacobians[_plot_wavelength]["J_fluence"],
+            channel_selection=0,
             save_directory=_jacobian_path.parent,
             save_filename=_figure_filename,
         )

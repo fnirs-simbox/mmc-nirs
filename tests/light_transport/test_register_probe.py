@@ -2,7 +2,7 @@ import importlib
 
 import numpy as np
 
-from mmcnirs.light_transport import find_optode_directions, make_orientation_matrices
+from mmcnirs.light_transport import find_center_directions, make_orientation_matrices
 from mmcnirs.utils.mesh_utils import make_orientation_matrices as mesh_orientation_matrices
 
 register_module = importlib.import_module("mmcnirs.light_transport.register_probe")
@@ -16,7 +16,7 @@ def test_find_optode_directions_uses_mesh_location_not_only_extent() -> None:
     mesh_nodes = np.array([[10.0, 10.0, 10.0], [20.0, 20.0, 20.0]])
     optodes = np.array([[20.0, 15.0, 15.0], [15.0, 10.0, 15.0]])
 
-    directions = find_optode_directions(optodes, mesh_nodes)
+    directions = find_center_directions(optodes, mesh_nodes)
 
     np.testing.assert_allclose(directions, [[-1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
 

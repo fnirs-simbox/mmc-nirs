@@ -9,7 +9,6 @@ from numbers import Real
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
-import warnings
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -31,7 +30,6 @@ from mmcnirs.utils.jacobian_utils import (
 __all__ = ["generate_jacobian"]
 
 _DETECTOR_RADIUS_MM = 1.0
-_DETECTOR_AREA_MM2 = np.pi * _DETECTOR_RADIUS_MM**2
 
 
 def _sum_detected_photon_weights(
@@ -264,7 +262,6 @@ def generate_jacobian(
     save: bool = True,
     overwrite: bool = False,
     timeout: float = 900,
-    basis_order: int = 1,
     compute_backend: str | None = None,
     gpu_id: int | None = None,
 ) -> dict[str, np.ndarray]:
@@ -314,10 +311,8 @@ def generate_jacobian(
         inputs.selected_properties,
         inputs.photon_count,
     )
-    base_config["basisorder"] = basis_order
-    base_config["seed"] = 123456789
-
-    field_count = len(inputs.nodes) if basis_order == 1 else len(inputs.elements)
+    base_config["basisorder"] = 1
+    nnodes = len(inputs.nodes)
     print(inputs.selected_properties)
     print(base_config["prop"])
     detector_positions_with_radius = np.column_stack(
@@ -332,12 +327,10 @@ def generate_jacobian(
 
     node_volumes = _calculate_node_volumes(inputs.nodes, inputs.elements)
 
-    green_source = np.zeros((source_count, field_count), dtype=float)
-    green_detector = np.zeros((detector_count, field_count), dtype=float)
-    green_source_detector_reflectance = np.zeros((row_count, 1), dtype=float)
-    # Diagnostic alternative denominator:
+    green_source = np.zeros((source_count, nnodes), dtype=float)
+    green_detector = np.zeros((detector_count, nnodes), dtype=float)
     # source volumetric fluence interpolated exactly at detector position.
-    green_source_detector_fluence = np.zeros((row_count, 1), dtype=float)
+    green_source_detector = np.zeros((row_count, 1), dtype=float)
     measurements_zero = np.zeros((row_count, 1), dtype=float)
 
     medium_count = inputs.selected_properties.shape[0] - 1
@@ -372,12 +365,12 @@ def generate_jacobian(
 
             source_fluence, detected_photons = read_cli_output(output_stub)
             _validate_complete_detected_history(detected_photons, source_index)
-            source_fluence = validate_mmc_field(source_fluence, field_count, f"source {source_index}")
+            source_fluence = validate_mmc_field(source_fluence, nnodes, f"source {source_index}")
             green_source[source_index] = source_fluence
             for detector_index in range(detector_count):
                 row = source_index * detector_count + detector_index
 
-                green_source_detector_fluence[row, 0] = _interpolate_nodal_field_in_tetrahedron(
+                green_source_detector[row, 0] = _interpolate_nodal_field_in_tetrahedron(
                     point=inputs.detector_positions[detector_index],
                     element_index=int(inputs.detector_elements[detector_index]),
                     nodes=inputs.nodes,
@@ -388,16 +381,9 @@ def generate_jacobian(
             row_start = source_index * detector_count
             row_stop = row_start + detector_count
 
-            photon_weights = compute_detected_photon_weights(
-                detected_photons,
-                optical_properties=inputs.selected_properties,
-            )
+            photon_weights = compute_detected_photon_weights(detected_photons, inputs.selected_properties)
 
-            detector_weight_sums = _sum_detected_photon_weights(
-                detected_photons,
-                photon_weights,
-                detector_count,
-            )
+            detector_weight_sums = _sum_detected_photon_weights(detected_photons, photon_weights, detector_count)
             measurements_zero[row_start:row_stop, 0] = detector_weight_sums / inputs.photon_count
 
             detector_mean_partial_pathlengths = _calculate_detected_mean_partial_pathlengths(
@@ -412,12 +398,11 @@ def generate_jacobian(
             for detector_index in range(detector_count):
                 row = source_index * detector_count + detector_index
                 mask = detector_ids == detector_index + 1
-
                 detected_photon_counts[row] = np.count_nonzero(mask)
-
                 w = photon_weights[mask]
                 if w.size and np.sum(w * w) > 0:
                     detected_photon_ess[row] = np.sum(w) ** 2 / np.sum(w * w)
+
             for detector_index in np.flatnonzero(detector_weight_sums == 0):
                 row = source_index * detector_count + detector_index
                 detected_count = np.sum(detector_ids == detector_index + 1)
@@ -426,12 +411,7 @@ def generate_jacobian(
                 )
                 if row in selected_channel_rows:
                     raise RuntimeError("Selected " + message)
-                warnings.warn("Unselected " + message, RuntimeWarning, stacklevel=2)
-
-            # Baseline source-detector diffuse reflectance used for Rytov normalization.
-            green_source_detector_reflectance[row_start:row_stop, 0] = (
-                detector_weight_sums / _DETECTOR_AREA_MM2 / inputs.photon_count
-            )
+                print("Unselected " + message)
 
         detector_progress = tqdm(range(detector_count), desc="MMC detectors", unit="detector")
         for detector_index in detector_progress:
@@ -457,53 +437,28 @@ def generate_jacobian(
                 ) from error
 
             detector_fluence = read_flux(output_stub.with_suffix(".dat"))
-            detector_fluence = validate_mmc_field(detector_fluence, field_count, f"detector {detector_index}")
+            detector_fluence = validate_mmc_field(detector_fluence, nnodes, f"detector {detector_index}")
             green_detector[detector_index] = detector_fluence
 
-    # Current reflectance-normalized construction
-    jacobian_reflectance = _calculate_jacobian(
-        green_source, green_detector, green_source_detector_reflectance, node_volumes
-    )
     # Diagnostic: use volumetric source fluence at detector location
-    jacobian_fluence = _calculate_jacobian(green_source, green_detector, green_source_detector_fluence, node_volumes)
-
-    jacobian_reflectance_effective_pathlength = -jacobian_reflectance.sum(axis=1, keepdims=True)
-    jacobian_fluence_effective_pathlength = -jacobian_fluence.sum(axis=1, keepdims=True)
-
+    jacobian = _calculate_jacobian(green_source, green_detector, green_source_detector, node_volumes)
+    jacobian_effective_pathlength = -jacobian.sum(axis=1, keepdims=True)
     detected_mean_pathlength = detected_mean_partial_pathlengths.sum(axis=1, keepdims=True)
-
-    pathlength_ratio_reflectance = np.divide(
-        jacobian_reflectance_effective_pathlength,
+    pathlength_ratio = np.divide(
+        jacobian_effective_pathlength,
         detected_mean_pathlength,
-        out=np.full_like(jacobian_reflectance_effective_pathlength, np.nan),
+        out=np.full_like(jacobian_effective_pathlength, np.nan),
         where=detected_mean_pathlength > 0,
-    )
-    pathlength_ratio_fluence = np.divide(
-        jacobian_fluence_effective_pathlength,
-        detected_mean_pathlength,
-        out=np.full_like(jacobian_fluence_effective_pathlength, np.nan),
-        where=detected_mean_pathlength > 0,
-    )
-    Green_sd_fluence_over_reflectance = np.divide(
-        green_source_detector_fluence,
-        green_source_detector_reflectance,
-        out=np.full_like(green_source_detector_fluence, np.nan),
-        where=green_source_detector_reflectance > 0,
     )
     result = {
         "Green_d": green_detector,
         "Green_s": green_source,
-        "Green_sd_reflectance": green_source_detector_reflectance,
-        "Green_sd_fluence": green_source_detector_fluence,
-        "J_reflectance": jacobian_reflectance,
-        "J_fluence": jacobian_fluence,
-        "detected_mean_pathlength": detected_mean_pathlength,
-        "jacobian_reflectance_effective_pathlength": jacobian_reflectance_effective_pathlength,
-        "jacobian_fluence_effective_pathlength": jacobian_fluence_effective_pathlength,
-        "pathlength_ratio_reflectance": pathlength_ratio_reflectance,
-        "pathlength_ratio_fluence": pathlength_ratio_fluence,
-        "Green_sd_fluence_over_reflectance": Green_sd_fluence_over_reflectance,
+        "Green_sd": green_source_detector,
+        "J": jacobian,
+        "jacobian_effective_pathlength": jacobian_effective_pathlength,
         "detected_mean_partial_pathlengths": detected_mean_partial_pathlengths,
+        "detected_mean_pathlength": detected_mean_pathlength,
+        "pathlength_ratio": pathlength_ratio,
         "channelidx": inputs.channel_indices,
         "mea0": measurements_zero,
         "sourcepos": inputs.source_positions,

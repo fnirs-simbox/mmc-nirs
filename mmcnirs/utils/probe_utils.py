@@ -36,7 +36,6 @@ _PROBE_SETTINGS_KEYS = {
     "short_separation_flag",
     "short_separation_arg",
     "embedding_step",
-    "max_embedding_steps",
 }
 
 
@@ -63,14 +62,6 @@ def validate_probe_settings(experiment_config: Mapping[str, Any]) -> dict[str, A
     ):
         raise ValueError("embedding_step must be a finite positive scalar")
 
-    max_embedding_steps = probe_settings["max_embedding_steps"]
-    if (
-        not isinstance(max_embedding_steps, (int, np.integer))
-        or isinstance(max_embedding_steps, (bool, np.bool_))
-        or max_embedding_steps < 0
-    ):
-        raise ValueError("max_embedding_steps must be a non-negative integer")
-
     short_separation_flag = probe_settings["short_separation_flag"]
     short_separation_arg = probe_settings["short_separation_arg"]
     if not isinstance(short_separation_flag, str):
@@ -94,7 +85,6 @@ def validate_probe_settings(experiment_config: Mapping[str, Any]) -> dict[str, A
         "short_separation_flag": normalized_flag,
         "short_separation_arg": short_separation_arg,
         "embedding_step": embedding_step,
-        "max_embedding_steps": max_embedding_steps,
     }
 
 
@@ -245,6 +235,117 @@ def _signed_surface_distances(
     _, distances, _ = trimesh.proximity.closest_point_naive(surface, coordinates)
     inside = _find_containing_elements(coordinates, nodes, elements) >= 0
     return np.where(inside, -distances, distances)
+
+
+def find_center_directions(optode_coordinates: ArrayLike, mesh_nodes: ArrayLike) -> np.ndarray:
+    """Compute inward unit directions from optodes toward the mesh center.
+
+    Parameters
+    ----------
+    optode_coordinates : array-like
+        Optode coordinates with shape ``(n_optodes, 3)``.
+    mesh_nodes : array-like
+        Mesh node coordinates with shape ``(n_nodes, 3)``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Unit direction vectors with shape ``(n_optodes, 3)``.
+
+    Raises
+    ------
+    ValueError
+        If an optode lies exactly at the mesh center.
+    """
+    optodes = as_coordinate_array(optode_coordinates, "optode_coordinates")
+    nodes = as_coordinate_array(mesh_nodes, "mesh_nodes")
+    mesh_center = (nodes.min(axis=0) + nodes.max(axis=0)) / 2.0
+    directions = mesh_center - optodes
+    lengths = np.linalg.norm(directions, axis=1, keepdims=True)
+    if np.any(lengths == 0):
+        raise ValueError("Cannot determine a direction for an optode at the mesh center")
+    return directions / lengths
+
+
+def find_smoothed_surface_directions(
+    surface: trimesh.Trimesh,
+    optode_coordinates: ArrayLike,
+    mesh_nodes: ArrayLike,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return area-weighted inward surface normals and local angular spread.
+
+    For each optode, the closest exterior surface triangle and all
+    edge-adjacent surface triangles are used. Their normals are oriented
+    consistently inward using the center-pointing direction as a sign
+    reference, then averaged with triangle-area weights.
+
+    Returns
+    -------
+    directions : ndarray, shape (n_optodes, 3)
+        Smoothed inward unit surface normals.
+    normal_spread_deg : ndarray, shape (n_optodes,)
+        Maximum angular deviation of the contributing face normals from
+        the final smoothed normal.
+    """
+    optodes = as_coordinate_array(optode_coordinates, "optode_coordinates")
+    nodes = as_coordinate_array(mesh_nodes, "mesh_nodes")
+
+    _, _, closest_face_ids = trimesh.proximity.closest_point_naive(surface, optodes)
+
+    faces = np.asarray(surface.faces, dtype=np.intp)
+    vertices = np.asarray(surface.vertices, dtype=float)
+
+    triangles = vertices[faces]
+
+    crosses = np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0])
+
+    double_areas = np.linalg.norm(crosses, axis=1)
+    if np.any(double_areas == 0):
+        raise ValueError("Exterior mesh contains degenerate surface triangles")
+
+    face_normals = crosses / double_areas[:, None]
+    face_areas = 0.5 * double_areas
+
+    center_directions = find_center_directions(optodes, nodes)
+
+    adjacency = [set() for _ in range(len(faces))]
+
+    for face_a, face_b in np.asarray(surface.face_adjacency, dtype=np.intp):
+        adjacency[face_a].add(face_b)
+        adjacency[face_b].add(face_a)
+
+    directions = np.empty_like(optodes)
+    normal_spread_deg = np.empty(len(optodes), dtype=float)
+
+    for optode_index, central_face_id in enumerate(closest_face_ids):
+        central_face_id = int(central_face_id)
+        local_face_ids = np.asarray(
+            [
+                central_face_id,
+                *sorted(adjacency[central_face_id]),
+            ],
+            dtype=np.intp,
+        )
+        local_normals = face_normals[local_face_ids].copy()
+
+        # The boundary-face winding is not guaranteed to be globally
+        # consistent, so orient each candidate toward the head interior.
+        inward_reference = center_directions[optode_index]
+        flip = (local_normals @ inward_reference) < 0
+        local_normals[flip] *= -1.0
+
+        average = np.sum(local_normals * face_areas[local_face_ids, None], axis=0)
+        length = np.linalg.norm(average)
+        if length == 0:
+            raise RuntimeError(f"Could not determine a smoothed surface direction for optode {optode_index}")
+
+        average /= length
+        directions[optode_index] = average
+
+        cos_angles = np.clip(local_normals @ average, -1.0, 1.0)
+        normal_spread_deg[optode_index] = np.degrees(np.arccos(cos_angles)).max()
+
+    return directions, normal_spread_deg
 
 
 def _plot_probe_registration(
