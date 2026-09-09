@@ -591,7 +591,6 @@ def _(
             wavelength=_run_wavelength,
             save_path=_run_save_path,
             overwrite=overwrite_jacobians.value,
-            basis_order=1,
             timeout=15,
         )
         generation_seconds[_run_wavelength] = time.perf_counter() - start_time
