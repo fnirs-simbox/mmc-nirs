@@ -117,6 +117,7 @@ def _(
         prepared_mesh=prepared_mesh,
         channel_pairings=channel_pairings,
         experiment_config=experiment_config,
+        surface_radius_mm=15.0,
         plot=True,
         overwrite=rebuild_inputs.value,
     )

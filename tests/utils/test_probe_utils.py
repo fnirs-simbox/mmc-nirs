@@ -51,7 +51,7 @@ def test_validate_probe_settings_returns_canonical_registration_values() -> None
         "short_separation_flag": "distance",
         "short_separation_arg": 15.0,
         "embedding_step": 0.5,
-        "max_embedding_steps": 1_000,
+        "surface_radius_mm": 15.0,
     }
 
 

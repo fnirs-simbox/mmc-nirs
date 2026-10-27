@@ -72,14 +72,15 @@ def _write_flux(path: Path, values: np.ndarray) -> None:
 
 def _write_history(path: Path, records: np.ndarray, detector_count: int = 2) -> None:
     records = np.asarray(records, dtype="<f4").reshape(-1, 2)
+    records = np.column_stack((records, np.ones(len(records), dtype="<f4")))
     photon_count = len(records)
-    savedetflag = (1 << 0) | (1 << 2)  # Detector ID and partial path.
+    savedetflag = (1 << 0) | (1 << 2) | (1 << 6)  # Detector ID, partial path, initial weight.
     header = _HISTORY_HEADER.pack(
         b"MCXH",
         1,
         1,
         detector_count,
-        2,
+        3,
         100,
         photon_count,
         photon_count,
@@ -110,7 +111,7 @@ def _mock_mmc_outputs(monkeypatch, *, zero_source_flux: bool = False):
     }
     calls = []
 
-    def fake_run_mmc(config_path, *, working_directory, timeout):
+    def fake_run_mmc(config_path, *, working_directory, timeout, extra_args):
         config_path = Path(config_path)
         working_directory = Path(working_directory)
         document = json.loads(config_path.read_text(encoding="utf-8"))

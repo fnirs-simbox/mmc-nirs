@@ -16,7 +16,11 @@ from mmcnirs.utils.mesh_utils import (
     make_surface_mesh,
 )
 
-from mmcnirs.utils.probe_utils import find_smoothed_surface_directions
+from mmcnirs.utils.probe_utils import (
+    DEFAULT_SURFACE_RADIUS_MM,
+    find_smoothed_surface_directions,
+    validate_surface_radius_mm,
+)
 
 
 def register_probe(
@@ -27,6 +31,7 @@ def register_probe(
     probe_orientation: str = "RAS",
     probe_units: str = "mm",
     embedding_step: float = 1e-3,
+    surface_radius_mm: float = DEFAULT_SURFACE_RADIUS_MM,
 ) -> tuple[
     Any, Any, ndarray | int, ndarray | int, ndarray[tuple[Any, ...], dtype[Any]], ndarray[tuple[Any, ...], dtype[Any]]
 ]:
@@ -50,6 +55,10 @@ def register_probe(
         millimetres.
     embedding_step : float, default=1e-3 [mm]
         Distance in millimetres inside mesh of optodes wrt the mesh surface.
+    surface_radius_mm : float, default=15.0
+        Radius in mesh millimetres for the connected, area-weighted exterior
+        surface patch used to calculate source and detector directions. This
+        affects directions only, not translation, projection, or embedding.
     Returns
     -------
     registered_sources : numpy.ndarray
@@ -57,9 +66,9 @@ def register_probe(
     registered_detectors : numpy.ndarray
         Registered detector coordinates.
     source_directions : numpy.ndarray
-        Unit vectors pointing from each source toward the mesh center.
+        Inward unit vectors from locally averaged surface normals.
     detector_directions : numpy.ndarray
-        Unit vectors pointing from each detector toward the mesh center.
+        Inward unit vectors from locally averaged surface normals.
     source_elements : numpy.ndarray
         Zero-based indices of tetrahedra containing the sources.
     detector_elements : numpy.ndarray
@@ -70,8 +79,7 @@ def register_probe(
     ValueError
         If an input shape, orientation, unit, or embedding setting is invalid.
     RuntimeError
-        If translation optimization fails or one or more optodes cannot be
-        embedded within ``max_embedding_steps``.
+        If translation optimization fails or one or more optodes cannot be embedded.
     """
     # Validate and normalize coordinate and element arrays. Element indices are
     # converted to zero-based indexing by as_element_array when necessary.
@@ -79,6 +87,7 @@ def register_probe(
     detectors = as_coordinate_array(detector_coordinates, "detector_coordinates")
     nodes = as_coordinate_array(mesh_nodes, "mesh_nodes")
     elements = as_element_array(mesh_elements, nodes.shape[0])
+    surface_radius_mm = validate_surface_radius_mm(surface_radius_mm)
 
     # Convert the probe's declared length unit to the mesh's millimeter unit.
     unit_scales = {"mm": 1.0, "cm": 10.0, "m": 1_000.0}
@@ -140,28 +149,22 @@ def register_probe(
     registered_sources = embedded_optodes[:n_sources]
     registered_detectors = embedded_optodes[n_sources:]
 
-    source_surface_points = surface_points[:n_sources]
-    detector_surface_points = surface_points[n_sources:]
-
     source_elements = containing_elements[:n_sources]
     detector_elements = containing_elements[n_sources:]
 
-    source_surface_directions, _ = find_smoothed_surface_directions(
+    surface_directions, _ = find_smoothed_surface_directions(
         surface,
-        source_surface_points,
+        surface_points,
         nodes,
-    )
-    detector_surface_directions, _ = find_smoothed_surface_directions(
-        surface,
-        detector_surface_points,
-        nodes,
+        surface_radius_mm=surface_radius_mm,
+        mesh_elements=elements,
     )
 
     return (
         registered_sources,
         registered_detectors,
-        source_surface_directions,
-        detector_surface_directions,
+        surface_directions[:n_sources],
+        surface_directions[n_sources:],
         source_elements,
         detector_elements,
     )

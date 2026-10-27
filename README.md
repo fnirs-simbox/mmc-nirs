@@ -112,6 +112,21 @@ central Hugging Face loader. When the workflow first runs MMC, the appropriate
 runtime is downloaded, checksum-verified, and installed in the user's managed
 cache.
 
+## Probe direction radius
+
+`register_probe(..., surface_radius_mm=15.0)` computes inward directions by
+averaging triangle normals over a connected surface patch within the specified
+radius in millimetres. The radius changes directions, not registered positions.
+`prepare_probe(..., surface_radius_mm=15.0)` explicitly selects the same radius;
+without an override it uses `probe_settings.surface_radius_mm`, defaulting to 15.
+New probe archives record `direction_surface_radius_mm`.
+
+Use `overwrite=True` to regenerate older cached probes. An explicit radius cannot
+reuse a cache with missing or different radius metadata. The placement-analysis
+notebook checks the stored vectors, their inward orientation, and their stability
+under small position and radius changes; 15 mm remains a tested default rather
+than a guarantee for every mesh or montage.
+
 ## Hugging Face connection
 
 All Hugging Face access is centralized in

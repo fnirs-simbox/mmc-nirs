@@ -8,6 +8,7 @@ import h5py
 import numpy as np
 import trimesh
 from numpy.typing import ArrayLike
+from scipy.spatial import cKDTree
 
 from mmcnirs.utils.mesh_utils import (
     _find_containing_elements,
@@ -20,6 +21,8 @@ from mmcnirs.utils.prepared_input_io import require_config_section, require_fiel
 
 if TYPE_CHECKING:
     from matplotlib.figure import Figure
+
+DEFAULT_SURFACE_RADIUS_MM = 15.0
 
 PREPARED_PROBE_KEYS = {
     "sourcepos",
@@ -85,7 +88,22 @@ def validate_probe_settings(experiment_config: Mapping[str, Any]) -> dict[str, A
         "short_separation_flag": normalized_flag,
         "short_separation_arg": short_separation_arg,
         "embedding_step": embedding_step,
+        "surface_radius_mm": validate_surface_radius_mm(
+            probe_settings.get("surface_radius_mm", DEFAULT_SURFACE_RADIUS_MM)
+        ),
     }
+
+
+def validate_surface_radius_mm(value: Any) -> float:
+    """Return a finite positive surface-neighborhood radius in mesh millimetres."""
+    if (
+        not isinstance(value, (int, float, np.integer, np.floating))
+        or isinstance(value, (bool, np.bool_))
+        or not np.isfinite(value)
+        or value <= 0
+    ):
+        raise ValueError("surface_radius_mm must be a finite positive scalar")
+    return float(value)
 
 
 def as_channel_pairing_array(values: ArrayLike, name: str = "channel_pairings") -> np.ndarray:
@@ -267,17 +285,67 @@ def find_center_directions(optode_coordinates: ArrayLike, mesh_nodes: ArrayLike)
     return directions / lengths
 
 
+def inward_surface_face_normals(
+    surface: trimesh.Trimesh,
+    mesh_nodes: ArrayLike,
+    mesh_elements: ArrayLike,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return inward unit normals and areas using each boundary face's owning tetrahedron.
+
+    ``surface`` must use the supplied mesh nodes and contain exterior faces of
+    the zero-based tetrahedra. Face order and winding may differ. Unlike a
+    head-center sign heuristic, this also orients normals correctly at concavities.
+    """
+    nodes = as_coordinate_array(mesh_nodes, "mesh_nodes")
+    elements = as_element_array(mesh_elements, len(nodes), index_base="zero")
+    if not np.array_equal(surface.vertices, nodes):
+        raise ValueError("surface vertices must match mesh_nodes without reindexing")
+    all_faces = elements[:, [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]]].reshape(-1, 3)
+    _, first, counts = np.unique(np.sort(all_faces, axis=1), axis=0, return_index=True, return_counts=True)
+    boundary_first = first[counts == 1]
+    opposite_nodes = elements[:, [3, 2, 1, 0]].reshape(-1)[boundary_first]
+    owner = {
+        tuple(sorted(face)): int(opposite)
+        for face, opposite in zip(all_faces[boundary_first], opposite_nodes, strict=True)
+    }
+    try:
+        opposite = np.array([owner[tuple(sorted(face))] for face in surface.faces], dtype=np.intp)
+    except KeyError as error:
+        raise ValueError("surface contains a face that is not a tetrahedral boundary face") from error
+    triangles = np.asarray(surface.vertices)[surface.faces]
+    crosses = np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0])
+    double_areas = np.linalg.norm(crosses, axis=1)
+    if np.any(double_areas == 0):
+        raise ValueError("Exterior mesh contains degenerate surface triangles")
+    normals = crosses / double_areas[:, None]
+    reference = nodes[opposite] - triangles.mean(axis=1)
+    signed = np.einsum("ij,ij->i", normals, reference)
+    if np.any(signed == 0):
+        raise ValueError("Boundary face belongs to a degenerate tetrahedron")
+    normals[signed < 0] *= -1.0
+    return normals, double_areas / 2.0
+
+
 def find_smoothed_surface_directions(
     surface: trimesh.Trimesh,
     optode_coordinates: ArrayLike,
     mesh_nodes: ArrayLike,
+    surface_radius_mm: float = DEFAULT_SURFACE_RADIUS_MM,
+    *,
+    mesh_elements: ArrayLike | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return area-weighted inward surface normals and local angular spread.
 
-    For each optode, the closest exterior surface triangle and all
-    edge-adjacent surface triangles are used. Their normals are oriented
-    consistently inward using the center-pointing direction as a sign
-    reference, then averaged with triangle-area weights.
+    Project each optode to the surface, then select face centroids within
+    ``surface_radius_mm`` (default 15 mm) of that anchor. Only the connected
+    component reached through edge adjacency from the closest face is used;
+    that face is always included. Radius is Euclidean, not a ring count or a
+    geodesic distance. Optode positions are not changed.
+
+    Supply zero-based ``mesh_elements`` to orient each normal toward its
+    owning tetrahedron. Registration always uses this exact interior sign.
+    When tetrahedra are unavailable, normals use the bounding-box center as
+    a sign reference, which can be unreliable at concave surfaces.
 
     Returns
     -------
@@ -289,8 +357,9 @@ def find_smoothed_surface_directions(
     """
     optodes = as_coordinate_array(optode_coordinates, "optode_coordinates")
     nodes = as_coordinate_array(mesh_nodes, "mesh_nodes")
+    radius = validate_surface_radius_mm(surface_radius_mm)
 
-    _, _, closest_face_ids = trimesh.proximity.closest_point_naive(surface, optodes)
+    surface_points, _, closest_face_ids = trimesh.proximity.closest_point_naive(surface, optodes)
 
     faces = np.asarray(surface.faces, dtype=np.intp)
     vertices = np.asarray(surface.vertices, dtype=float)
@@ -305,8 +374,11 @@ def find_smoothed_surface_directions(
 
     face_normals = crosses / double_areas[:, None]
     face_areas = 0.5 * double_areas
-
-    center_directions = find_center_directions(optodes, nodes)
+    if mesh_elements is not None:
+        face_normals, face_areas = inward_surface_face_normals(surface, nodes, mesh_elements)
+    center_directions = find_center_directions(optodes, nodes) if mesh_elements is None else None
+    centers = triangles.mean(axis=1)
+    radius_candidates = cKDTree(centers).query_ball_point(surface_points, radius)
 
     adjacency = [set() for _ in range(len(faces))]
 
@@ -319,20 +391,19 @@ def find_smoothed_surface_directions(
 
     for optode_index, central_face_id in enumerate(closest_face_ids):
         central_face_id = int(central_face_id)
-        local_face_ids = np.asarray(
-            [
-                central_face_id,
-                *sorted(adjacency[central_face_id]),
-            ],
-            dtype=np.intp,
-        )
+        allowed = set(radius_candidates[optode_index])
+        allowed.add(central_face_id)
+        visited, frontier = {central_face_id}, {central_face_id}
+        while frontier:
+            candidates = set().union(*(adjacency[face] for face in frontier)) - visited
+            frontier = candidates & allowed
+            visited.update(frontier)
+        local_face_ids = np.asarray(sorted(visited), dtype=np.intp)
         local_normals = face_normals[local_face_ids].copy()
 
-        # The boundary-face winding is not guaranteed to be globally
-        # consistent, so orient each candidate toward the head interior.
-        inward_reference = center_directions[optode_index]
-        flip = (local_normals @ inward_reference) < 0
-        local_normals[flip] *= -1.0
+        if center_directions is not None:
+            flip = (local_normals @ center_directions[optode_index]) < 0
+            local_normals[flip] *= -1.0
 
         average = np.sum(local_normals * face_areas[local_face_ids, None], axis=0)
         length = np.linalg.norm(average)

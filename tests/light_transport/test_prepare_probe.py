@@ -99,6 +99,7 @@ def test_prepare_probe_registers_with_prepared_mesh(
         "channel_pairings",
         "short_separation_indices",
         "long_separation_indices",
+        "direction_surface_radius_mm",
     }
     for key, value in zip(
         ("sourcepos", "detpos", "sourcedir", "detnorms", "source_elements", "detector_elements"),
@@ -120,7 +121,8 @@ def test_prepare_probe_registers_with_prepared_mesh(
     assert kwargs["probe_units"] == "cm"
     assert kwargs["probe_orientation"] == "LIA"
     assert kwargs["embedding_step"] == 0.5
-    assert kwargs["max_embedding_steps"] == 1_000
+    assert kwargs["surface_radius_mm"] == 15.0
+    assert probe["direction_surface_radius_mm"] == 15.0
 
 
 def test_prepare_probe_reuses_existing_archive_before_registration(
@@ -249,6 +251,7 @@ def test_prepare_probe_validates_mesh_before_cache_reuse(experiment_config) -> N
 def test_prepare_probe_rejects_invalid_channel_configuration(
     experiment_config,
     prepared_mesh,
+    fake_registration,
     pairings,
     flag,
     argument,
@@ -334,7 +337,7 @@ def test_prepare_probe_requires_complete_settings_before_cache_reuse(experiment_
 
     message = str(error.value)
     assert (
-        "required keys: embedding_step, max_embedding_steps, probe_orientation, probe_units, "
+        "required keys: embedding_step, probe_orientation, probe_units, "
         "short_separation_arg, short_separation_flag" in message
     )
     assert "missing keys: embedding_step, probe_units" in message
@@ -347,8 +350,8 @@ def test_prepare_probe_requires_complete_settings_before_cache_reuse(experiment_
         ("probe_orientation", "XYZ", "probe orientation"),
         ("embedding_step", 0, "embedding_step"),
         ("embedding_step", np.inf, "embedding_step"),
-        ("max_embedding_steps", -1, "max_embedding_steps"),
-        ("max_embedding_steps", 1.5, "max_embedding_steps"),
+        ("surface_radius_mm", 0, "surface_radius_mm"),
+        ("surface_radius_mm", np.nan, "surface_radius_mm"),
     ],
 )
 def test_prepare_probe_validates_settings_before_cache_reuse(
@@ -364,3 +367,45 @@ def test_prepare_probe_validates_settings_before_cache_reuse(
 
     with pytest.raises(ValueError, match=message):
         prepare_probe([], [], {}, [], experiment_config)
+
+
+@pytest.mark.parametrize(("configured", "override", "expected"), [(8.0, None, 8.0), (8.0, 12.0, 12.0)])
+def test_prepare_probe_radius_configuration_and_override(
+    experiment_config,
+    prepared_mesh,
+    fake_registration,
+    configured,
+    override,
+    expected,
+):
+    experiment_config["probe_settings"]["surface_radius_mm"] = configured
+    probe = prepare_probe(
+        [[0, 0, 0], [1, 0, 0]],
+        [[0.1, 0, 0], [3, 0, 0]],
+        prepared_mesh,
+        [[1, 1], [2, 2]],
+        experiment_config,
+        surface_radius_mm=override,
+    )
+    assert fake_registration[0][1]["surface_radius_mm"] == expected
+    assert probe["direction_surface_radius_mm"] == expected
+    assert experiment_config["probe_settings"]["surface_radius_mm"] == configured
+    path = experiment_config["experiment_dir"] / "probe.npz"
+    with np.load(path) as saved:
+        assert saved["direction_surface_radius_mm"] == expected
+
+
+@pytest.mark.parametrize("cached_radius", [None, 8.0])
+def test_explicit_radius_cannot_silently_reuse_unknown_or_different_cache(
+    experiment_config,
+    prepared_mesh,
+    cached_radius,
+):
+    directory = experiment_config["experiment_dir"]
+    directory.mkdir()
+    cached = {key: np.zeros(1) for key in probe_module._PROBE_ARCHIVE_KEYS}
+    if cached_radius is not None:
+        cached["direction_surface_radius_mm"] = np.asarray(cached_radius)
+    np.savez(directory / "probe.npz", **cached)
+    with pytest.raises(ValueError, match="overwrite=True"):
+        prepare_probe([], [], prepared_mesh, [], experiment_config, surface_radius_mm=15)

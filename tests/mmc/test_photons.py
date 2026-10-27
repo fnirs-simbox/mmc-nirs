@@ -13,7 +13,9 @@ def detected_photons() -> dict[str, np.ndarray]:
                 [5.0, 7.0],
                 [0.0, 11.0],
             ]
-        )
+        ),
+        "w0": np.ones(3),
+        "unitinmm": 1.0,
     }
 
 
