@@ -168,6 +168,28 @@ under the platform's managed user cache:
 
 Set `MMCNIRS_CACHE_DIR` to override the runtime cache location.
 
+Installations coexist under `runtime/<version>/<platform>/`. The default version
+comes from Hugging Face's `mmc-runtime/manifest.json`; no release is hardcoded in
+Python. Cached manifests and executables are reused without remote checks unless
+`update_manifest=True` refreshes the root manifest. If its version changed, the
+new platform archive is downloaded, SHA-256 verified, and installed. Subsequent
+default calls use that version. Explicit versions use their version-specific
+manifest and take precedence, including when refreshing the root manifest.
+
+```python
+from mmcnirs.mmc.runtime import get_mmc_executable
+
+previous = get_mmc_executable(version="v2025.10")
+current = get_mmc_executable(version="v2026")
+recommended = get_mmc_executable(update_manifest=True)
+cached_default = get_mmc_executable()  # No remote check.
+```
+
+`run_mmc(..., version="v2026", update_manifest=False)` and
+`generate_jacobian(..., version="v2026", update_manifest=False)` accept the same
+options. A Jacobian job resolves the executable once for all source and detector
+runs. Returning an existing saved Jacobian does not trigger runtime discovery.
+
 ### Licensing
 
 The [MIT license](LICENSE) covers the `mmcnirs` software, not the data or MMC
@@ -198,4 +220,11 @@ Run the test suite and lint checks with:
 ```bash
 uv run pytest
 uv run ruff check .
+```
+
+The optional runtime smoke test downloads the real v2026 binary and runs only
+`--version`, without a simulation:
+
+```bash
+MMCNIRS_TEST_RUNTIME_DOWNLOADS=1 uv run pytest tests/mmc/test_runtime.py -k real_v2026
 ```

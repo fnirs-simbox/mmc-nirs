@@ -18,6 +18,7 @@ from mmcnirs.light_transport.prepare_jacobian_inputs import prepare_jacobian_inp
 from mmcnirs.mmc.history import read_cli_output, read_flux
 from mmcnirs.mmc.photons import compute_detected_photon_weights
 from mmcnirs.mmc.runner import run_mmc
+from mmcnirs.mmc.runtime import get_mmc_executable
 from mmcnirs.utils.jacobian_utils import (
     build_jacobian_mmc_config,
     load_jacobian_result,
@@ -264,6 +265,8 @@ def generate_jacobian(
     timeout: float = 900,
     compute_backend: str | None = None,
     gpu_id: int | None = None,
+    version: str | None = None,
+    update_manifest: bool = False,
 ) -> dict[str, np.ndarray]:
     """Generate a Jacobian for one wavelength from prepared mesh and probe data.
 
@@ -271,6 +274,10 @@ def generate_jacobian(
     in an isolated temporary directory. When saving is enabled, an existing
     compatible archive is returned without rerunning MMC unless ``overwrite``
     is true.
+
+    ``version`` selects an MMC release; ``update_manifest`` checks Hugging Face
+    for a changed default. The executable is resolved once before the source
+    and detector runs. Reusing a saved result does not resolve the runtime.
 
     ``prepared_mesh`` must contain canonical ``nodes``, zero-based ``elements``,
     positional ``element_tissue_ids``, and parallel ``ordered_tissue_ids`` and
@@ -304,6 +311,7 @@ def generate_jacobian(
         mmc_settings,
         wavelength,
     )
+    executable = get_mmc_executable(version=version, update_manifest=update_manifest)
     base_config = build_jacobian_mmc_config(
         inputs.nodes,
         inputs.elements,
@@ -357,6 +365,7 @@ def generate_jacobian(
                     working_directory=temporary_directory,
                     timeout=float(timeout),
                     extra_args=backend_args,
+                    executable=executable,
                 )
             except TimeoutError as error:
                 raise TimeoutError(
@@ -428,7 +437,11 @@ def generate_jacobian(
             mmc_to_json(detector_config, config_path)
             try:
                 run_mmc(
-                    config_path, working_directory=temporary_directory, timeout=float(timeout), extra_args=backend_args
+                    config_path,
+                    working_directory=temporary_directory,
+                    timeout=float(timeout),
+                    extra_args=backend_args,
+                    executable=executable,
                 )
             except TimeoutError as error:
                 raise TimeoutError(

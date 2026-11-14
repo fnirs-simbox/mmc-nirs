@@ -1,6 +1,7 @@
 import json
 import struct
 from pathlib import Path
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -21,6 +22,13 @@ _RESULT_KEYS = {
     "detnorms",
     "sourcedir",
 }
+
+
+@pytest.fixture(autouse=True)
+def runtime_lookup(monkeypatch):
+    lookup = Mock(return_value=Path("/mock/mmc"))
+    monkeypatch.setattr(jacobian_module, "get_mmc_executable", lookup)
+    return lookup
 
 
 @pytest.fixture
@@ -111,7 +119,8 @@ def _mock_mmc_outputs(monkeypatch, *, zero_source_flux: bool = False):
     }
     calls = []
 
-    def fake_run_mmc(config_path, *, working_directory, timeout, extra_args):
+    def fake_run_mmc(config_path, *, working_directory, timeout, extra_args, executable):
+        assert executable == Path("/mock/mmc")
         config_path = Path(config_path)
         working_directory = Path(working_directory)
         document = json.loads(config_path.read_text(encoding="utf-8"))
@@ -128,7 +137,7 @@ def _mock_mmc_outputs(monkeypatch, *, zero_source_flux: bool = False):
     return calls, source_fluxes, detector_fluxes
 
 
-def test_generate_jacobian_reuses_an_existing_saved_result(tmp_path: Path, monkeypatch) -> None:
+def test_generate_jacobian_reuses_an_existing_saved_result(tmp_path: Path, monkeypatch, runtime_lookup) -> None:
     save_path = tmp_path / "jacobian_690.npz"
     cached = {key: np.array([index]) for index, key in enumerate(sorted(_RESULT_KEYS))}
     np.savez(save_path, **cached)
@@ -136,6 +145,7 @@ def test_generate_jacobian_reuses_an_existing_saved_result(tmp_path: Path, monke
 
     result = generate_jacobian({}, {}, {}, {}, 690, save_path)
 
+    runtime_lookup.assert_not_called()
     for key, value in cached.items():
         np.testing.assert_array_equal(result[key], value)
 
@@ -176,11 +186,15 @@ def test_generate_jacobian_overwrites_an_existing_result(
         assert archive["J"].shape == (4, 4)
 
 
-def test_generate_jacobian_can_skip_saving(
+@pytest.mark.parametrize(("version", "update_manifest"), [(None, False), ("v2025.10", False), ("v2026", True)])
+def test_generate_jacobian_resolves_runtime_once_for_all_runs(
     monkeypatch,
+    runtime_lookup,
     prepared_mesh,
     prepared_probe,
     optical_properties,
+    version,
+    update_manifest,
 ) -> None:
     calls, _, _ = _mock_mmc_outputs(monkeypatch)
 
@@ -192,10 +206,13 @@ def test_generate_jacobian_can_skip_saving(
         690,
         None,
         save=False,
+        version=version,
+        update_manifest=update_manifest,
     )
 
     assert len(calls) == 4
     assert result["J"].shape == (4, 4)
+    runtime_lookup.assert_called_once_with(version=version, update_manifest=update_manifest)
 
 
 def test_generate_jacobian_accepts_zero_source_flux(

@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import stat
 import tempfile
@@ -20,10 +21,10 @@ from mmcnirs.loaders.hf_loader import download_hf_resource
 __all__ = ["get_mmc_executable"]
 
 _EXECUTABLE_PATHS = {
-    "linux-x86_64": PurePosixPath("mmc/bin/mmc"),
-    "macos-arm64": PurePosixPath("mmc/bin/mmc"),
-    "macos-x86_64": PurePosixPath("mmc/bin/mmc"),
-    "windows-x86_64": PurePosixPath("mmc/bin/mmc.exe"),
+    "linux-x86_64": ("mmc/bin/mmc", "mmc-trinity/bin/mmc"),
+    "macos-arm64": ("mmc/bin/mmc",),
+    "macos-x86_64": ("mmc/bin/mmc",),
+    "windows-x86_64": ("mmc/bin/mmc.exe", "mmc-trinity/bin/mmc.exe"),
 }
 
 
@@ -67,8 +68,12 @@ def _user_cache_directory(platform_key: str) -> Path:
     return (Path(cache_base).expanduser() if cache_base else Path.home() / ".cache") / "mmcnirs"
 
 
-def _executable_path(cache_directory: Path, platform_key: str) -> Path:
-    return cache_directory.joinpath("runtime", platform_key, *_EXECUTABLE_PATHS[platform_key].parts)
+def _find_executable(directory: Path, platform_key: str) -> Path | None:
+    for relative_path in _EXECUTABLE_PATHS[platform_key]:
+        executable = directory.joinpath(*PurePosixPath(relative_path).parts)
+        if executable.is_file():
+            return executable
+    return None
 
 
 def _ensure_executable_permission(executable: Path, platform_key: str) -> None:
@@ -76,14 +81,40 @@ def _ensure_executable_permission(executable: Path, platform_key: str) -> None:
         executable.chmod(executable.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
-def _load_artifact(manifest_path: Path, platform_key: str) -> tuple[str, str]:
+def _validate_version(version: str) -> str:
+    if not isinstance(version, str) or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", version) is None:
+        raise ValueError(f"Invalid MMC runtime version: {version!r}")
+    return version
+
+
+def _load_manifest(cache_directory: Path, version: str | None = None, *, refresh: bool = False) -> dict[str, Any]:
+    remote_path = f"mmc-runtime/{version}/manifest.json" if version else "mmc-runtime/manifest.json"
+    manifest_path = cache_directory / remote_path
+    if refresh or not manifest_path.is_file():
+        manifest_path = download_hf_resource(
+            "runtime",
+            "manifest",
+            assets_root=cache_directory,
+            path_in_repo=remote_path,
+            force_download=refresh,
+        )
     try:
         with manifest_path.open("r", encoding="utf-8") as manifest_file:
             manifest: Any = json.load(manifest_file)
     except (OSError, json.JSONDecodeError) as error:
         raise RuntimeError(f"Could not read MMC runtime manifest at {manifest_path}: {error}") from error
 
-    artifacts = manifest.get("artifacts") if isinstance(manifest, dict) else None
+    try:
+        declared_version = _validate_version(manifest.get("version") if isinstance(manifest, dict) else None)
+    except ValueError as error:
+        raise RuntimeError(f"MMC runtime manifest at {manifest_path} contains an invalid version") from error
+    if version is not None and version != declared_version:
+        raise RuntimeError(f"MMC runtime manifest declares {declared_version!r}, expected {version!r}")
+    return manifest
+
+
+def _load_artifact(manifest: dict[str, Any], platform_key: str) -> tuple[str, str]:
+    artifacts = manifest.get("artifacts")
     artifact = artifacts.get(platform_key) if isinstance(artifacts, dict) else None
     if not isinstance(artifact, dict):
         raise RuntimeError(f"MMC runtime manifest has no artifact for {platform_key!r}")
@@ -93,7 +124,13 @@ def _load_artifact(manifest_path: Path, platform_key: str) -> tuple[str, str]:
     if not isinstance(archive_path, str) or not archive_path:
         raise RuntimeError(f"MMC runtime manifest contains an invalid path for {platform_key!r}")
     remote_path = PurePosixPath(archive_path)
-    if remote_path.is_absolute() or any(part in {".", ".."} for part in remote_path.parts):
+    if (
+        remote_path.is_absolute()
+        or any(part in {".", ".."} for part in remote_path.parts)
+        or "\\" in archive_path
+        or not remote_path.is_relative_to("mmc-runtime")
+        or remote_path == PurePosixPath("mmc-runtime")
+    ):
         raise RuntimeError(f"MMC runtime manifest contains an unsafe path for {platform_key!r}: {archive_path!r}")
     if (
         not isinstance(expected_sha256, str)
@@ -133,24 +170,22 @@ def _extract_zip(archive_path: Path, destination: Path) -> None:
         raise RuntimeError(f"Could not extract MMC runtime archive at {archive_path}: {error}") from error
 
 
-def _install_archive(archive_path: Path, cache_directory: Path, platform_key: str) -> Path:
-    install_directory = cache_directory / "runtime" / platform_key
-    executable_relative_path = _EXECUTABLE_PATHS[platform_key]
+def _install_archive(archive_path: Path, install_directory: Path, platform_key: str) -> Path:
     install_directory.parent.mkdir(parents=True, exist_ok=True)
     temporary_directory = Path(tempfile.mkdtemp(prefix=f".{platform_key}-", dir=install_directory.parent))
 
     try:
         _extract_zip(archive_path, temporary_directory)
-        temporary_executable = temporary_directory.joinpath(*executable_relative_path.parts)
-        if not temporary_executable.is_file():
+        temporary_executable = _find_executable(temporary_directory, platform_key)
+        if temporary_executable is None:
             raise RuntimeError(
-                f"MMC runtime archive for {platform_key} does not contain {executable_relative_path.as_posix()!r}"
+                f"MMC runtime archive for {platform_key} does not contain any of {_EXECUTABLE_PATHS[platform_key]}"
             )
         _ensure_executable_permission(temporary_executable, platform_key)
 
         if install_directory.exists():
-            cached_executable = install_directory.joinpath(*executable_relative_path.parts)
-            if cached_executable.is_file():
+            cached_executable = _find_executable(install_directory, platform_key)
+            if cached_executable is not None:
                 _ensure_executable_permission(cached_executable, platform_key)
                 return cached_executable
             shutil.rmtree(install_directory)
@@ -159,13 +194,13 @@ def _install_archive(archive_path: Path, cache_directory: Path, platform_key: st
             temporary_directory.replace(install_directory)
         except OSError:
             # Another process may have completed the same atomic installation.
-            cached_executable = install_directory.joinpath(*executable_relative_path.parts)
-            if not cached_executable.is_file():
+            cached_executable = _find_executable(install_directory, platform_key)
+            if cached_executable is None:
                 raise
             _ensure_executable_permission(cached_executable, platform_key)
             return cached_executable
 
-        executable = install_directory.joinpath(*executable_relative_path.parts)
+        executable = install_directory / temporary_executable.relative_to(temporary_directory)
         _ensure_executable_permission(executable, platform_key)
         return executable
     finally:
@@ -173,27 +208,45 @@ def _install_archive(archive_path: Path, cache_directory: Path, platform_key: st
             shutil.rmtree(temporary_directory)
 
 
-def get_mmc_executable() -> Path:
+def get_mmc_executable(version: str | None = None, update_manifest: bool = False) -> Path:
     """Return the platform's MMC executable, downloading and caching it if needed.
 
-    The archive is selected from the public runtime manifest, downloaded
-    anonymously to the current user's managed cache, verified before
-    extraction, and installed in that cache.
+    With no explicit ``version``, the cached root manifest selects the default.
+    ``update_manifest=True`` refreshes that manifest from Hugging Face so a
+    changed default is installed and used. An explicit version always takes
+    precedence and uses its own manifest. Without an update request, cached
+    manifests and installations are reused without remote checks.
+
+    Archives are SHA-256 verified before extraction. Versions coexist beneath
+    ``runtime/<version>/<platform>`` in the user's managed cache.
     """
+    if version is not None:
+        _validate_version(version)
+    if not isinstance(update_manifest, bool):
+        raise TypeError("update_manifest must be a boolean")
     platform_key = _detect_platform()
     cache_directory = _user_cache_directory(platform_key)
-    cached_executable = _executable_path(cache_directory, platform_key)
-    if cached_executable.is_file():
+
+    if version is None:
+        manifest = _load_manifest(cache_directory, refresh=update_manifest)
+    else:
+        if update_manifest:
+            _load_manifest(cache_directory, refresh=True)
+        manifest = _load_manifest(cache_directory, version)
+    install_directory = cache_directory / "runtime" / manifest["version"] / platform_key
+    cached_executable = _find_executable(install_directory, platform_key)
+    if cached_executable is not None:
         _ensure_executable_permission(cached_executable, platform_key)
         return cached_executable
 
-    manifest_path = download_hf_resource("runtime", "manifest", assets_root=cache_directory)
-    archive_remote_path, expected_sha256 = _load_artifact(manifest_path, platform_key)
-    archive_path = download_hf_resource(
-        "runtime",
-        "archive",
-        assets_root=cache_directory,
-        path_in_repo=archive_remote_path,
-    )
+    archive_remote_path, expected_sha256 = _load_artifact(manifest, platform_key)
+    archive_path = cache_directory / archive_remote_path
+    if not archive_path.is_file():
+        archive_path = download_hf_resource(
+            "runtime",
+            "archive",
+            assets_root=cache_directory,
+            path_in_repo=archive_remote_path,
+        )
     _verify_archive(archive_path, expected_sha256, platform_key)
-    return _install_archive(archive_path, cache_directory, platform_key)
+    return _install_archive(archive_path, install_directory, platform_key)

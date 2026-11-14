@@ -135,8 +135,8 @@ def download_hf_resource(
 
     Directory resources mirror their repository paths beneath ``assets_root``.
     When omitted, ``assets_root`` defaults to ``./mmcnirs-assets``. Runtime
-    archives are selected dynamically from the downloaded runtime manifest and
-    are restricted to paths beneath ``mmc-runtime/``.
+    archives and version-specific manifests may use ``path_in_repo`` and are
+    restricted to paths beneath ``mmc-runtime/``.
     """
     if not isinstance(force_download, bool):
         raise TypeError("force_download must be a boolean")
@@ -168,6 +168,8 @@ def download_hf_resource(
 
     if resource.kind == "dynamic-file":
         remote_path = _validated_dynamic_path(resource, path_in_repo)
+    elif (category, keyword) == ("runtime", "manifest") and path_in_repo is not None:
+        remote_path = _validated_dynamic_path(_RESOURCES[("runtime", "archive")], path_in_repo)
     else:
         if path_in_repo is not None:
             raise ValueError("path_in_repo is only supported for dynamic Hugging Face resources")
