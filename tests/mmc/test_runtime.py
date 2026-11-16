@@ -13,6 +13,47 @@ from mmcnirs.loaders import hf_loader
 from mmcnirs.mmc import runtime
 
 
+@pytest.mark.parametrize("system", ["Linux", "Windows"])
+@pytest.mark.parametrize(
+    ("init_status", "count_status", "device_count", "expected"),
+    [(0, 0, 1, True), (0, 0, 0, False), (100, 0, 1, False), (0, 100, 1, False)],
+)
+def test_cuda_probe_requires_usable_driver_and_device(
+    monkeypatch, system, init_status, count_status, device_count, expected
+):
+    calls = []
+
+    def initialize(flags):
+        calls.append(("init", flags))
+        return init_status
+
+    def get_count(pointer):
+        calls.append(("count",))
+        pointer._obj.value = device_count
+        return count_status
+
+    class Driver:
+        cuInit = staticmethod(initialize)
+        cuDeviceGetCount = staticmethod(get_count)
+
+    monkeypatch.setattr(runtime.platform, "system", lambda: system)
+    loader = "WinDLL" if system == "Windows" else "CDLL"
+    monkeypatch.setattr(runtime.ctypes, loader, lambda name: Driver(), raising=False)
+    assert runtime.is_cuda_available() is expected
+    assert calls == ([("init", 0)] if init_status else [("init", 0), ("count",)])
+
+
+def test_cuda_probe_without_driver_or_on_non_cuda_platform(monkeypatch):
+    def missing_driver(name):
+        raise OSError("driver unavailable")
+
+    monkeypatch.setattr(runtime.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(runtime.ctypes, "CDLL", missing_driver)
+    assert runtime.is_cuda_available() is False
+    monkeypatch.setattr(runtime.platform, "system", lambda: "Darwin")
+    assert runtime.is_cuda_available() is False
+
+
 @pytest.fixture
 def runtime_downloads(tmp_path: Path, monkeypatch):
     """Serve real ZIPs and manifests through the normal HF loader, without network."""

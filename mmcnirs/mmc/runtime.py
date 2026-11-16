@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import json
 import os
@@ -18,7 +19,33 @@ from typing import Any
 
 from mmcnirs.loaders.hf_loader import download_hf_resource
 
-__all__ = ["get_mmc_executable"]
+__all__ = ["get_mmc_executable", "is_cuda_available"]
+
+
+def is_cuda_available() -> bool:
+    """Return whether the NVIDIA driver can initialize and enumerate a device.
+
+    This probe allocates no GPU context and needs neither PyTorch nor a CUDA
+    toolkit. It does not install MMC or test a particular MMC binary. The
+    workflow uses it to offer CUDA with the CUDA-capable managed runtime;
+    OpenCL and CPU remain explicit alternatives.
+    """
+    system = platform.system()
+    if system not in {"Linux", "Windows"}:
+        return False
+    try:
+        driver = ctypes.WinDLL("nvcuda.dll") if system == "Windows" else ctypes.CDLL("libcuda.so.1")
+        driver.cuInit.argtypes = [ctypes.c_uint]
+        driver.cuInit.restype = ctypes.c_int
+        driver.cuDeviceGetCount.argtypes = [ctypes.POINTER(ctypes.c_int)]
+        driver.cuDeviceGetCount.restype = ctypes.c_int
+        if driver.cuInit(0) != 0:
+            return False
+        count = ctypes.c_int()
+        return driver.cuDeviceGetCount(ctypes.byref(count)) == 0 and count.value > 0
+    except (OSError, AttributeError):
+        return False
+
 
 _EXECUTABLE_PATHS = {
     "linux-x86_64": ("mmc/bin/mmc", "mmc-trinity/bin/mmc"),
