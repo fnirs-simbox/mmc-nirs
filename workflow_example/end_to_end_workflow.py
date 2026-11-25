@@ -463,7 +463,7 @@ def _(mo):
     photon_count = mo.ui.number(
         start=1,
         step=100_000,
-        value=2e9,
+        value=4e9,
         label="Photons per MMC run",
     )
     photon_count
@@ -573,7 +573,12 @@ def _(is_cuda_available, mo):
             run_mmc_button,
         ]
     )
-    return mmc_backend, overwrite_jacobians, refresh_mmc_manifest, run_mmc_button
+    return (
+        mmc_backend,
+        overwrite_jacobians,
+        refresh_mmc_manifest,
+        run_mmc_button,
+    )
 
 
 @app.cell
@@ -611,7 +616,7 @@ def _(
             overwrite=overwrite_jacobians.value,
             update_manifest=refresh_mmc_manifest.value,
             compute_backend=mmc_backend.value,
-            timeout=300,
+            timeout=600,
         )
         generation_seconds[_run_wavelength] = time.perf_counter() - start_time
         print(f"{_run_wavelength} wavelength finished.")

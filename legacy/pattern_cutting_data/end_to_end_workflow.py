@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.24.0"
+__generated_with = "0.25.2"
 app = marimo.App(width="medium")
 
 
@@ -146,7 +146,7 @@ def _(mo):
     photon_count = mo.ui.number(
         start=1,
         step=100_000,
-        value=2e9,
+        value=4e9,
         label="Photons per MMC run",
     )
     photon_count
@@ -254,7 +254,7 @@ def _(
             overwrite=overwrite_jacobians.value,
             update_manifest=refresh_mmc_manifest.value,
             compute_backend=mmc_backend.value,
-            timeout=300,
+            timeout=600,
         )
         runtimes[_wavelength] = time.perf_counter() - _start
     return jacobians, runtimes

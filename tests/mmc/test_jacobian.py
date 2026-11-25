@@ -125,6 +125,10 @@ def _mock_mmc_outputs(monkeypatch, *, zero_source_flux: bool = False):
         working_directory = Path(working_directory)
         document = json.loads(config_path.read_text(encoding="utf-8"))
         session_id = document["Session"]["ID"]
+        if session_id.startswith("source_"):
+            assert extra_args[-2:] == ["-H", "10000000"]
+        else:
+            assert "-H" not in extra_args
         calls.append((document, working_directory, timeout))
         output_stub = working_directory / session_id
         if session_id in source_fluxes:
@@ -135,6 +139,18 @@ def _mock_mmc_outputs(monkeypatch, *, zero_source_flux: bool = False):
 
     monkeypatch.setattr(jacobian_module, "run_mmc", fake_run_mmc)
     return calls, source_fluxes, detector_fluxes
+
+
+@pytest.mark.parametrize("saved", [10_000_000, 10_000_001])
+def test_complete_history_rejects_capacity_even_when_header_counts_match(saved):
+    history = {"detected_counts": np.array([saved]), "saved_counts": np.array([saved])}
+    with pytest.raises(RuntimeError, match="recording capacity for source 7"):
+        jacobian_module._validate_complete_detected_history(history, 7)
+
+
+def test_complete_history_accepts_below_capacity():
+    history = {"detected_counts": np.array([9_999_999]), "saved_counts": np.array([9_999_999])}
+    jacobian_module._validate_complete_detected_history(history, 7)
 
 
 def test_generate_jacobian_reuses_an_existing_saved_result(tmp_path: Path, monkeypatch, runtime_lookup) -> None:

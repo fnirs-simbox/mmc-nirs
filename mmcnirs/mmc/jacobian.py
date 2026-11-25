@@ -31,6 +31,7 @@ from mmcnirs.utils.jacobian_utils import (
 __all__ = ["generate_jacobian"]
 
 _DETECTOR_RADIUS_MM = 1.0
+_MAX_DETECTED_PHOTONS = 10_000_000
 
 
 def _sum_detected_photon_weights(
@@ -78,6 +79,14 @@ def _validate_complete_detected_history(
             f"MMC detected-photon history was truncated for source {source_index}, block {block}: "
             f"detected={detected_counts[block]}, saved={saved_counts[block]}. "
             "Green_sd and mea0 require the complete detected-photon history; increase MMC maxdetphoton."
+        )
+
+    # CUDA can write the clipped count as both detected and saved in the header.
+    if np.any(saved_counts >= _MAX_DETECTED_PHOTONS):
+        raise RuntimeError(
+            f"MMC detected-photon history reached the recording capacity for source {source_index} "
+            f"({_MAX_DETECTED_PHOTONS} photons). Completeness cannot be verified; "
+            "increase MMC maxdetphoton or reduce the photons per run."
         )
 
 
@@ -364,7 +373,7 @@ def generate_jacobian(
                     config_path,
                     working_directory=temporary_directory,
                     timeout=float(timeout),
-                    extra_args=backend_args,
+                    extra_args=[*backend_args, "-H", str(_MAX_DETECTED_PHOTONS)],
                     executable=executable,
                 )
             except TimeoutError as error:

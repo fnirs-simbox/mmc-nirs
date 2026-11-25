@@ -80,7 +80,6 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
-/notebooks/jacobian_audit/
 
 # IPython
 profile_default/
