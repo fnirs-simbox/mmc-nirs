@@ -5,7 +5,6 @@ import pytest
 from mmcnirs.utils.probe_utils import (
     as_channel_pairing_array,
     as_unit_direction_array,
-    flatten_channel_pairings,
     load_channel_pairs_from_snirf,
     normalize_channel_pairings,
     validate_probe_settings,
@@ -51,7 +50,7 @@ def test_validate_probe_settings_returns_canonical_registration_values() -> None
         "short_separation_flag": "distance",
         "short_separation_arg": 15.0,
         "embedding_step": 0.5,
-        "max_embedding_steps": 1_000,
+        "surface_radius_mm": 15.0,
     }
 
 
@@ -59,12 +58,6 @@ def test_normalize_channel_pairings_returns_zero_based_indices() -> None:
     normalized = normalize_channel_pairings([[1, 1], [2, 2]], 2, 2, index_base="one")
 
     np.testing.assert_array_equal(normalized, [[0, 0], [1, 1]])
-
-
-def test_flatten_channel_pairings_returns_unique_zero_based_matrix_rows() -> None:
-    flattened = flatten_channel_pairings([[0, 0], [0, 0], [1, 0], [1, 1]], 2, 2)
-
-    np.testing.assert_array_equal(flattened, [0, 2, 3])
 
 
 def test_as_channel_pairing_array_rejects_invalid_shape_and_values() -> None:

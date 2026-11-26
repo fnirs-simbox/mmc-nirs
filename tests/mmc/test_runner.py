@@ -6,9 +6,14 @@ import pytest
 from mmcnirs.mmc import runner
 
 
-def test_run_mmc_executes_managed_runtime_and_returns_output(tmp_path: Path, monkeypatch) -> None:
-    config_path = tmp_path / "simulation.json"
-    config_path.write_text("{}", encoding="utf-8")
+@pytest.fixture
+def config_path(tmp_path: Path) -> Path:
+    path = tmp_path / "simulation.json"
+    path.write_text("{}", encoding="utf-8")
+    return path
+
+
+def test_run_mmc_executes_managed_runtime_and_returns_output(config_path: Path, tmp_path: Path, monkeypatch) -> None:
     executable = tmp_path / "runtime" / "mmc"
     completed_process = subprocess.CompletedProcess(
         args=[],
@@ -19,8 +24,8 @@ def test_run_mmc_executes_managed_runtime_and_returns_output(tmp_path: Path, mon
     runtime_calls = []
     subprocess_calls = []
 
-    def fake_get_mmc_executable() -> Path:
-        runtime_calls.append(None)
+    def fake_get_mmc_executable(**kwargs) -> Path:
+        runtime_calls.append(kwargs)
         return executable
 
     def fake_run(command, **kwargs):
@@ -30,11 +35,12 @@ def test_run_mmc_executes_managed_runtime_and_returns_output(tmp_path: Path, mon
     monkeypatch.setattr(runner.runtime, "get_mmc_executable", fake_get_mmc_executable)
     monkeypatch.setattr(runner.subprocess, "run", fake_run)
 
-    result = runner.run_mmc("simulation.json", working_directory=tmp_path, timeout=42)
+    result = runner.run_mmc(
+        config_path.name, working_directory=tmp_path, timeout=42, version="v2026", update_manifest=True
+    )
 
     assert result is completed_process
-    assert result.stdout == "simulation complete"
-    assert runtime_calls == [None]
+    assert runtime_calls == [{"version": "v2026", "update_manifest": True}]
     assert subprocess_calls == [
         (
             [str(executable.resolve()), "-f", str(config_path.resolve()), "-d", "1"],
@@ -47,7 +53,6 @@ def test_run_mmc_executes_managed_runtime_and_returns_output(tmp_path: Path, mon
             },
         )
     ]
-    assert Path(subprocess_calls[0][0][0]).is_absolute()
 
 
 def test_run_mmc_rejects_missing_config_before_runtime_lookup(tmp_path: Path, monkeypatch) -> None:
@@ -60,28 +65,29 @@ def test_run_mmc_rejects_missing_config_before_runtime_lookup(tmp_path: Path, mo
         runner.run_mmc("missing.json", working_directory=tmp_path)
 
 
-def test_run_mmc_raises_clear_timeout_without_retry(tmp_path: Path, monkeypatch) -> None:
-    config_path = tmp_path / "simulation.json"
-    config_path.write_text("{}", encoding="utf-8")
-    monkeypatch.setattr(runner.runtime, "get_mmc_executable", lambda: tmp_path / "runtime" / "mmc")
+def test_run_mmc_raises_clear_timeout_after_max_trials(config_path: Path, tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(runner.runtime, "get_mmc_executable", lambda **kwargs: tmp_path / "runtime" / "mmc")
     calls = []
 
     def fake_run(command, **kwargs):
         calls.append((command, kwargs))
-        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"], stderr="MMC stalled on detector 16")
 
     monkeypatch.setattr(runner.subprocess, "run", fake_run)
 
-    with pytest.raises(TimeoutError, match="MMC timed out after 3 seconds.*simulation.json"):
+    with pytest.raises(
+        TimeoutError,
+        match="MMC timed out after 3 seconds.*simulation.json.*Command.*MMC stalled on detector 16",
+    ):
         runner.run_mmc(config_path, working_directory=tmp_path, timeout=3)
 
-    assert len(calls) == 1
+    assert len(calls) == 5
 
 
-def test_run_mmc_raises_clear_error_for_nonzero_exit_without_retry(tmp_path: Path, monkeypatch) -> None:
-    config_path = tmp_path / "simulation.json"
-    config_path.write_text("{}", encoding="utf-8")
-    monkeypatch.setattr(runner.runtime, "get_mmc_executable", lambda: tmp_path / "runtime" / "mmc")
+def test_run_mmc_raises_clear_error_for_nonzero_exit_without_retry(
+    config_path: Path, tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(runner.runtime, "get_mmc_executable", lambda **kwargs: tmp_path / "runtime" / "mmc")
     calls = []
 
     def fake_run(command, **kwargs):
@@ -94,3 +100,20 @@ def test_run_mmc_raises_clear_error_for_nonzero_exit_without_retry(tmp_path: Pat
         runner.run_mmc(config_path, working_directory=tmp_path)
 
     assert len(calls) == 1
+
+
+def test_run_mmc_uses_pre_resolved_executable_without_runtime_lookup(
+    config_path: Path, tmp_path: Path, monkeypatch
+) -> None:
+    executable = tmp_path / "runtime/v2026/mmc"
+    monkeypatch.setattr(
+        runner.runtime, "get_mmc_executable", lambda **kwargs: pytest.fail("Runtime was resolved again")
+    )
+
+    def fake_run(command, **kwargs):
+        assert command[0] == str(executable.resolve())
+        return subprocess.CompletedProcess(command, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+
+    runner.run_mmc(config_path, working_directory=tmp_path, executable=executable)

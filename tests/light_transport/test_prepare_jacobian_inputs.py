@@ -4,44 +4,8 @@ import pytest
 from mmcnirs.light_transport.prepare_jacobian_inputs import prepare_jacobian_inputs
 
 
-@pytest.fixture
-def inputs():
-    mesh = {
-        "nodes": np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
-        "elements": np.array([[0, 1, 2, 3]]),
-        "node_tissue_ids": np.ones(4, dtype=int),
-        "element_tissue_ids": np.array([1]),
-        "ordered_tissue_ids": np.array([0, 1]),
-        "ordered_tissues": np.array(["ambient_air", "tissue"]),
-    }
-    probe = {
-        "sourcepos": np.array([[0.1, 0.1, 0.1], [0.2, 0.1, 0.1]]),
-        "detpos": np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
-        "sourcedir": np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
-        "detnorms": np.array([[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0]]),
-        "source_elements": np.array([0, 0]),
-        "detector_elements": np.array([0, 0]),
-        "channel_pairings": np.array([[0, 0], [0, 0], [1, 0], [1, 1]]),
-    }
-    properties = {
-        "690": {
-            "tissue": [0.1, 1.0, 0.9, 1.4],
-            "ambient_air": [0.0, 0.0, 1.0, 1.0],
-        }
-    }
-    return mesh, probe, properties
-
-
-def test_prepare_jacobian_inputs_normalizes_all_generator_inputs(inputs) -> None:
-    mesh, probe, properties = inputs
-
-    prepared = prepare_jacobian_inputs(
-        mesh,
-        probe,
-        properties,
-        {"nphoton": 5e9},
-        690,
-    )
+def test_prepare_jacobian_inputs_normalizes_all_generator_inputs(jacobian_inputs) -> None:
+    prepared = prepare_jacobian_inputs(*jacobian_inputs, {"nphoton": 2e9}, 690)
 
     np.testing.assert_array_equal(prepared.elements, [[0, 1, 2, 3]])
     np.testing.assert_array_equal(prepared.element_tissue_ids, [1])
@@ -51,7 +15,7 @@ def test_prepare_jacobian_inputs_normalizes_all_generator_inputs(inputs) -> None
         prepared.selected_properties,
         [[0.0, 0.0, 1.0, 1.0], [0.1, 1.0, 0.9, 1.4]],
     )
-    assert prepared.photon_count == 5_000_000_000
+    assert prepared.photon_count == 2_000_000_000
 
 
 @pytest.mark.parametrize(
@@ -71,12 +35,12 @@ def test_prepare_jacobian_inputs_normalizes_all_generator_inputs(inputs) -> None
     ],
 )
 def test_prepare_jacobian_inputs_rejects_incompatible_prepared_data(
-    inputs,
+    jacobian_inputs,
     mesh_update,
     probe_update,
     message,
 ) -> None:
-    mesh, probe, properties = inputs
+    mesh, probe, properties = jacobian_inputs
 
     with pytest.raises(ValueError, match=message):
         prepare_jacobian_inputs(
@@ -88,14 +52,6 @@ def test_prepare_jacobian_inputs_rejects_incompatible_prepared_data(
         )
 
 
-def test_prepare_jacobian_inputs_rejects_missing_wavelength(inputs) -> None:
-    mesh, probe, properties = inputs
-
+def test_prepare_jacobian_inputs_rejects_missing_wavelength(jacobian_inputs) -> None:
     with pytest.raises(ValueError, match="No optical properties"):
-        prepare_jacobian_inputs(
-            mesh,
-            probe,
-            properties,
-            {"nphoton": 100},
-            850,
-        )
+        prepare_jacobian_inputs(*jacobian_inputs, {"nphoton": 100}, 850)

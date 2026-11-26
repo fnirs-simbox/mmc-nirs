@@ -30,6 +30,7 @@ def _():
         prepare_probe,
     )
     from mmcnirs.mmc.jacobian import generate_jacobian
+    from mmcnirs.mmc.runtime import is_cuda_available
     from mmcnirs.utils.plot_jacobians import plot_tissue_sensitivity
     from mmcnirs.utils.probe_utils import load_channel_pairs_from_snirf
 
@@ -37,6 +38,7 @@ def _():
         Path,
         download_hf_resource,
         generate_jacobian,
+        is_cuda_available,
         json,
         load_channel_pairs_from_snirf,
         load_config,
@@ -44,8 +46,8 @@ def _():
         loadmat,
         mo,
         np,
-        plt,
         plot_tissue_sensitivity,
+        plt,
         prepare_jacobian_inputs,
         prepare_mesh,
         prepare_probe,
@@ -380,8 +382,7 @@ def _(
     channels are {separation_rule}.
 
     Registration uses an embedding step of
-    `{probe_settings["embedding_step"]} mm` and at most
-    `{probe_settings["max_embedding_steps"]}` embedding steps.
+    `{probe_settings["embedding_step"]} mm.`
 
     These units, orientation, and short-separation rules were recovered
     from the SD file and/or the associated study documentation. There is no
@@ -408,6 +409,7 @@ def _(
         prepared_mesh=prepared_mesh,
         channel_pairings=channel_pairings,
         experiment_config=experiment_config,
+        surface_radius_mm=15.0,
         plot=rebuild_prepared_inputs.value,
         overwrite=rebuild_prepared_inputs.value,
     )
@@ -439,6 +441,7 @@ def _(experiment_config, mo, prepared_probe, registration_figure):
 @app.cell
 def _(experiment_config, json):
     optical_properties_path = experiment_config["experiment_dir"] / experiment_config["filepaths"]["optical_properties"]
+
     with optical_properties_path.open("r", encoding="utf-8") as optical_properties_file:
         optical_properties = json.load(optical_properties_file)
 
@@ -457,10 +460,12 @@ def _(experiment_config, json):
 
 @app.cell
 def _(mo):
+    # MMC v2026 reads Session.Photons as a signed 32-bit integer.
     photon_count = mo.ui.number(
         start=1,
+        stop=2_147_483_647,
         step=100_000,
-        value=5e8,
+        value=2_000_000_000,
         label="Photons per MMC run",
     )
     photon_count
@@ -531,11 +536,18 @@ def _(inputs_by_wavelength, mo, optical_properties_path, prepared_mesh):
 
 
 @app.cell
-def _(mo):
+def _(is_cuda_available, mo):
     overwrite_jacobians = mo.ui.checkbox(
         value=True,
         label="Overwrite existing Jacobian files",
     )
+    _cuda_present = is_cuda_available()
+    mmc_backend = mo.ui.dropdown(
+        options=["cuda", "opencl", "sse"] if _cuda_present else ["opencl", "sse"],
+        value="cuda" if _cuda_present else "opencl",
+        label="MMC backend (CUDA detected)" if _cuda_present else "MMC backend (CUDA unavailable)",
+    )
+    refresh_mmc_manifest = mo.ui.checkbox(value=True, label="Refresh MMC version from Hugging Face")
     run_mmc_button = mo.ui.run_button(label="Run MMC for every configured wavelength")
     mo.vstack(
         [
@@ -548,28 +560,41 @@ def _(mo):
                 configured wavelength. The button prevents Marimo reactivity
                 from launching those simulations unintentionally.
 
-                The reduced photon count is suitable for workflow iteration,
-                not a production-quality forward model. Very small values may
-                yield no detected photons for a source-detector pair.
+                New runs follow the version in the refreshed Hugging Face
+                manifest. CUDA is offered when the NVIDIA driver reports a
+                device; OpenCL and CPU (sse) are selectable alternatives.
+                Reusing an existing Jacobian does not update its MMC version.
+
+                Choose the photon count for the required precision. Very small
+                values may yield no detected photons for a source-detector pair.
                 """
             ),
             overwrite_jacobians,
+            refresh_mmc_manifest,
+            mmc_backend,
             run_mmc_button,
         ]
     )
-    return overwrite_jacobians, run_mmc_button
+    return (
+        mmc_backend,
+        overwrite_jacobians,
+        refresh_mmc_manifest,
+        run_mmc_button,
+    )
 
 
 @app.cell
 def _(
     generate_jacobian,
     jacobian_paths,
+    mmc_backend,
     mo,
     notebook_mmc_settings,
     optical_properties,
     overwrite_jacobians,
     prepared_mesh,
     prepared_probe,
+    refresh_mmc_manifest,
     run_mmc_button,
     time,
     wavelengths,
@@ -591,6 +616,9 @@ def _(
             wavelength=_run_wavelength,
             save_path=_run_save_path,
             overwrite=overwrite_jacobians.value,
+            update_manifest=refresh_mmc_manifest.value,
+            compute_backend=mmc_backend.value,
+            timeout=300,
         )
         generation_seconds[_run_wavelength] = time.perf_counter() - start_time
         print(f"{_run_wavelength} wavelength finished.")
@@ -657,7 +685,7 @@ def _(
             prepared_mesh=prepared_mesh,
             prepared_probe=prepared_probe,
             jacobian=generated_jacobians[_plot_wavelength]["J"],
-            channel_selection="all",
+            channel_selection=0,
             save_directory=_jacobian_path.parent,
             save_filename=_figure_filename,
         )
@@ -682,7 +710,12 @@ def _(
             *[sensitivity_figures[wavelength] for wavelength in wavelengths],
         ]
     )
-    return sensitivity_figures, sensitivity_paths
+    return
+
+
+@app.cell
+def _():
+    return
 
 
 if __name__ == "__main__":

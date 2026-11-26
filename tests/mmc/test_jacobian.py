@@ -1,6 +1,7 @@
 import json
 import struct
 from pathlib import Path
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -23,46 +24,11 @@ _RESULT_KEYS = {
 }
 
 
-@pytest.fixture
-def prepared_mesh() -> dict[str, np.ndarray]:
-    return {
-        "nodes": np.array(
-            [
-                [0.0, 0.0, 0.0],
-                [1.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0],
-                [0.0, 0.0, 1.0],
-            ]
-        ),
-        "elements": np.array([[0, 1, 2, 3]]),
-        "node_tissue_ids": np.ones(4, dtype=int),
-        "element_tissue_ids": np.array([1]),
-        "ordered_tissue_ids": np.array([0, 1]),
-        "ordered_tissues": np.array(["ambient_air", "tissue"]),
-    }
-
-
-@pytest.fixture
-def prepared_probe() -> dict[str, np.ndarray]:
-    return {
-        "sourcepos": np.array([[0.1, 0.1, 0.1], [0.2, 0.1, 0.1]]),
-        "detpos": np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
-        "sourcedir": np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
-        "detnorms": np.array([[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0]]),
-        "source_elements": np.array([0, 0]),
-        "detector_elements": np.array([0, 0]),
-        "channel_pairings": np.array([[0, 0], [0, 0], [1, 0], [1, 1]]),
-    }
-
-
-@pytest.fixture
-def optical_properties() -> dict[str, dict[str, list[float]]]:
-    return {
-        "690": {
-            "ambient_air": [0.0, 0.0, 1.0, 1.0],
-            "tissue": [0.1, 1.0, 0.9, 1.4],
-        }
-    }
+@pytest.fixture(autouse=True)
+def runtime_lookup(monkeypatch):
+    lookup = Mock(return_value=Path("/mock/mmc"))
+    monkeypatch.setattr(jacobian_module, "get_mmc_executable", lookup)
+    return lookup
 
 
 def _write_flux(path: Path, values: np.ndarray) -> None:
@@ -72,14 +38,15 @@ def _write_flux(path: Path, values: np.ndarray) -> None:
 
 def _write_history(path: Path, records: np.ndarray, detector_count: int = 2) -> None:
     records = np.asarray(records, dtype="<f4").reshape(-1, 2)
+    records = np.column_stack((records, np.ones(len(records), dtype="<f4")))
     photon_count = len(records)
-    savedetflag = (1 << 0) | (1 << 2)  # Detector ID and partial path.
+    savedetflag = (1 << 0) | (1 << 2) | (1 << 6)  # Detector ID, partial path, initial weight.
     header = _HISTORY_HEADER.pack(
         b"MCXH",
         1,
         1,
         detector_count,
-        2,
+        3,
         100,
         photon_count,
         photon_count,
@@ -95,10 +62,10 @@ def _write_history(path: Path, records: np.ndarray, detector_count: int = 2) -> 
     path.write_bytes(header + records.tobytes())
 
 
-def _mock_mmc_outputs(monkeypatch, *, zero_normalizer: bool = False):
+def _mock_mmc_outputs(monkeypatch, *, zero_source_flux: bool = False):
     source_fluxes = {
-        "source_0000": np.array([0.0 if zero_normalizer else 2.0, 4.0, 6.0, 8.0]),
-        "source_0001": np.array([3.0, 6.0, 9.0, 12.0]),
+        "source_0000": np.array([0.0 if zero_source_flux else 2.0, 4.0, 6.0, 8.0]),
+        "source_0001": np.array([3.0, 9.0, 12.0, 6.0]),
     }
     detector_fluxes = {
         "detector_0000": np.array([5.0, 10.0, 15.0, 20.0]),
@@ -106,16 +73,22 @@ def _mock_mmc_outputs(monkeypatch, *, zero_normalizer: bool = False):
     }
     histories = {
         "source_0000": np.array([[1.0, 1.0], [2.0, 2.0], [2.0, 3.0]]),
-        "source_0001": np.array([[1.0, 4.0]]),
+        "source_0001": np.array([[1.0, 4.0], [2.0, 5.0]]),
     }
-    calls = []
+    sessions = []
 
-    def fake_run_mmc(config_path, *, working_directory, timeout):
+    def fake_run_mmc(config_path, *, working_directory, timeout, extra_args, executable):
+        assert executable == Path("/mock/mmc")
         config_path = Path(config_path)
         working_directory = Path(working_directory)
-        document = json.loads(config_path.read_text(encoding="utf-8"))
-        session_id = document["Session"]["ID"]
-        calls.append((document, working_directory, timeout))
+        session = json.loads(config_path.read_text(encoding="utf-8"))["Session"]
+        assert session["Photons"] == 100
+        session_id = session["ID"]
+        if session_id.startswith("source_"):
+            assert extra_args[-2:] == ["-H", "10000000"]
+        else:
+            assert "-H" not in extra_args
+        sessions.append(session_id)
         output_stub = working_directory / session_id
         if session_id in source_fluxes:
             _write_flux(output_stub.with_suffix(".dat"), source_fluxes[session_id])
@@ -124,78 +97,22 @@ def _mock_mmc_outputs(monkeypatch, *, zero_normalizer: bool = False):
             _write_flux(output_stub.with_suffix(".dat"), detector_fluxes[session_id])
 
     monkeypatch.setattr(jacobian_module, "run_mmc", fake_run_mmc)
-    return calls, source_fluxes, detector_fluxes
+    return sessions
 
 
-def test_generate_jacobian_runs_mmc_and_preserves_legacy_calculations(
-    tmp_path: Path,
-    monkeypatch,
-    prepared_mesh,
-    prepared_probe,
-    optical_properties,
-) -> None:
-    calls, source_fluxes, detector_fluxes = _mock_mmc_outputs(monkeypatch)
-    save_path = tmp_path / "outputs" / "jacobian_690.npz"
-
-    result = generate_jacobian(
-        prepared_mesh,
-        prepared_probe,
-        optical_properties,
-        {"nphoton": 100},
-        690,
-        save_path,
-        timeout=12,
-    )
-
-    tstep = 5e-9
-    expected_green_s = np.vstack((source_fluxes["source_0000"], source_fluxes["source_0001"])) * tstep
-    expected_green_d = np.vstack((detector_fluxes["detector_0000"], detector_fluxes["detector_0001"])) * tstep
-    expected_green_sd = np.array([[2.0], [4.0], [3.0], [6.0]]) * tstep
-    expected_jacobian = np.vstack(
-        [
-            expected_green_s[0] * expected_green_d[0] / expected_green_sd[0],
-            expected_green_s[0] * expected_green_d[1] / expected_green_sd[1],
-            expected_green_s[1] * expected_green_d[0] / expected_green_sd[2],
-            expected_green_s[1] * expected_green_d[1] / expected_green_sd[3],
-        ]
-    )
-    expected_measurements = np.array(
-        [
-            [np.exp(-0.1)],
-            [np.exp(-0.2) + np.exp(-0.3)],
-            [np.exp(-0.4)],
-            [0.0],
-        ]
-    )
-
-    np.testing.assert_allclose(result["Green_s"], expected_green_s)
-    np.testing.assert_allclose(result["Green_d"], expected_green_d)
-    np.testing.assert_allclose(result["Green_sd"], expected_green_sd)
-    np.testing.assert_allclose(result["J"], expected_jacobian)
-    np.testing.assert_allclose(result["mea0"], expected_measurements, rtol=1e-6)
-    np.testing.assert_array_equal(result["channelidx"], [0, 2, 3])
-    np.testing.assert_array_equal(result["detpos"][:, 3], [1.0, 1.0])
-    assert save_path.is_file()
-
-    assert len(calls) == 4
-    assert all(timeout == 12 for _, _, timeout in calls)
-    working_directories = {working_directory for _, working_directory, _ in calls}
-    assert len(working_directories) == 1
-    assert not next(iter(working_directories)).exists()
-
-    source_documents = [document for document, _, _ in calls[:2]]
-    detector_documents = [document for document, _, _ in calls[2:]]
-    assert [document["Mesh"]["InitElem"] for document in source_documents] == [1, 1]
-    assert [document["Mesh"]["InitElem"] for document in detector_documents] == [1, 1]
-    assert all(document["Session"]["Photons"] == 100 for document, _, _ in calls)
-    assert all(document["Mesh"]["MeshElem"] == [[1, 2, 3, 4, 1]] for document, _, _ in calls)
-    assert all(document["Forward"] == {"T0": 0.0, "T1": 5e-9, "Dt": 5e-9} for document, _, _ in calls)
-    assert all(len(document["Optode"]["Detector"]) == 2 for document in source_documents)
-    assert all(detector["R"] == 1.0 for document in source_documents for detector in document["Optode"]["Detector"])
-    assert all("Detector" not in document["Optode"] for document in detector_documents)
+@pytest.mark.parametrize("saved", [10_000_000, 10_000_001])
+def test_complete_history_rejects_capacity_even_when_header_counts_match(saved):
+    history = {"detected_counts": np.array([saved]), "saved_counts": np.array([saved])}
+    with pytest.raises(RuntimeError, match="recording capacity for source 7"):
+        jacobian_module._validate_complete_detected_history(history, 7)
 
 
-def test_generate_jacobian_reuses_an_existing_saved_result(tmp_path: Path, monkeypatch) -> None:
+def test_complete_history_accepts_below_capacity():
+    history = {"detected_counts": np.array([9_999_999]), "saved_counts": np.array([9_999_999])}
+    jacobian_module._validate_complete_detected_history(history, 7)
+
+
+def test_generate_jacobian_reuses_an_existing_saved_result(tmp_path: Path, monkeypatch, runtime_lookup) -> None:
     save_path = tmp_path / "jacobian_690.npz"
     cached = {key: np.array([index]) for index, key in enumerate(sorted(_RESULT_KEYS))}
     np.savez(save_path, **cached)
@@ -203,6 +120,7 @@ def test_generate_jacobian_reuses_an_existing_saved_result(tmp_path: Path, monke
 
     result = generate_jacobian({}, {}, {}, {}, 690, save_path)
 
+    runtime_lookup.assert_not_called()
     for key, value in cached.items():
         np.testing.assert_array_equal(result[key], value)
 
@@ -215,119 +133,100 @@ def test_generate_jacobian_rejects_an_incompatible_saved_result(tmp_path: Path) 
         generate_jacobian({}, {}, {}, {}, 690, save_path)
 
 
-def test_generate_jacobian_overwrites_an_existing_result(
-    tmp_path: Path,
-    monkeypatch,
-    prepared_mesh,
-    prepared_probe,
-    optical_properties,
-) -> None:
-    calls, _, _ = _mock_mmc_outputs(monkeypatch)
+def test_generate_jacobian_overwrites_archive_with_normalized_values(tmp_path: Path, monkeypatch, jacobian_inputs):
+    sessions = _mock_mmc_outputs(monkeypatch)
     save_path = tmp_path / "jacobian_690.npz"
     cached = {key: np.array([-1]) for key in _RESULT_KEYS}
     np.savez(save_path, **cached)
 
-    result = generate_jacobian(
-        prepared_mesh,
-        prepared_probe,
-        optical_properties,
-        {"nphoton": 100},
-        690,
-        save_path,
-        overwrite=True,
-    )
+    result = generate_jacobian(*jacobian_inputs, {"nphoton": 100}, 690, save_path, overwrite=True)
 
-    assert len(calls) == 4
-    assert result["J"].shape == (4, 4)
+    assert sessions == ["source_0000", "source_0001", "detector_0000", "detector_0001"]
+    np.testing.assert_allclose(result["Green_sd"][:, 0], [2.0, 4.25, 3.0, 9.0])
+    # The second detector interpolates the source fluence to 9. Each node has volume 1/24 mm³.
+    np.testing.assert_allclose(result["J"][3], -np.array([21.0, 126.0, 252.0, 168.0]) / (24 * 9))
+    weights = np.exp(-0.1 * np.arange(1, 6))
+    expected_measurements = np.array([weights[0], weights[1:3].sum(), weights[3], weights[4]]) / 100
+    np.testing.assert_allclose(result["mea0"][:, 0], expected_measurements)
     with np.load(save_path, allow_pickle=False) as archive:
-        assert archive["J"].shape == (4, 4)
+        np.testing.assert_array_equal(archive["J"], result["J"])
 
 
-def test_generate_jacobian_can_skip_saving(
+def test_generate_jacobian_resolves_runtime_once_for_all_runs(
     monkeypatch,
-    prepared_mesh,
-    prepared_probe,
-    optical_properties,
+    runtime_lookup,
+    jacobian_inputs,
 ) -> None:
-    calls, _, _ = _mock_mmc_outputs(monkeypatch)
+    _mock_mmc_outputs(monkeypatch)
 
     result = generate_jacobian(
-        prepared_mesh,
-        prepared_probe,
-        optical_properties,
+        *jacobian_inputs,
         {"nphoton": 100},
         690,
         None,
         save=False,
+        version="v2026",
+        update_manifest=True,
     )
 
-    assert len(calls) == 4
     assert result["J"].shape == (4, 4)
+    runtime_lookup.assert_called_once_with(version="v2026", update_manifest=True)
 
 
-def test_generate_jacobian_rejects_zero_source_detector_normalization(
+def test_generate_jacobian_accepts_zero_source_flux(
     tmp_path: Path,
     monkeypatch,
-    prepared_mesh,
-    prepared_probe,
-    optical_properties,
+    jacobian_inputs,
 ) -> None:
-    _mock_mmc_outputs(monkeypatch, zero_normalizer=True)
+    _mock_mmc_outputs(monkeypatch, zero_source_flux=True)
 
-    with pytest.raises(ValueError, match="Green_sd must be finite and positive for source 0, detector 0"):
-        generate_jacobian(
-            prepared_mesh,
-            prepared_probe,
-            optical_properties,
-            {"nphoton": 100},
-            690,
-            tmp_path / "jacobian.npz",
-        )
+    result = generate_jacobian(
+        *jacobian_inputs,
+        {"nphoton": 100},
+        690,
+        tmp_path / "jacobian.npz",
+    )
+
+    np.testing.assert_array_equal(result["J"][:2, 0], [0.0, 0.0])
 
 
 @pytest.mark.parametrize(
-    ("mmc_settings", "error", "message"),
+    ("mmc_settings", "message"),
     [
-        ({}, ValueError, "missing required field"),
-        ({"nphoton": 0}, ValueError, "positive integer"),
-        ({"nphoton": 1.5}, ValueError, "positive integer"),
-        ({"nphoton": 100, "tstep": 1.0}, ValueError, "unsupported field"),
+        ({}, "missing required field"),
+        ({"nphoton": 0}, "positive integer"),
+        ({"nphoton": 1.5}, "positive integer"),
+        ({"nphoton": 2_147_483_648}, "at most 2,147,483,647 photons"),
+        ({"nphoton": 100, "tstep": 1.0}, "unsupported field"),
     ],
 )
 def test_generate_jacobian_rejects_invalid_mmc_settings(
     tmp_path: Path,
-    prepared_mesh,
-    prepared_probe,
-    optical_properties,
+    jacobian_inputs,
     mmc_settings,
-    error,
     message,
+    runtime_lookup,
 ) -> None:
-    with pytest.raises(error, match=message):
+    with pytest.raises(ValueError, match=message):
         generate_jacobian(
-            prepared_mesh,
-            prepared_probe,
-            optical_properties,
+            *jacobian_inputs,
             mmc_settings,
             690,
             tmp_path / "jacobian.npz",
         )
+    runtime_lookup.assert_not_called()
 
 
 def test_generate_jacobian_requires_mmc_outputs(
     tmp_path: Path,
     monkeypatch,
-    prepared_mesh,
-    prepared_probe,
-    optical_properties,
+    jacobian_inputs,
 ) -> None:
     monkeypatch.setattr(jacobian_module, "run_mmc", lambda *args, **kwargs: None)
 
     with pytest.raises(FileNotFoundError, match="source_0000.dat"):
         generate_jacobian(
-            prepared_mesh,
-            prepared_probe,
-            optical_properties,
+            *jacobian_inputs,
             {"nphoton": 100},
             690,
             tmp_path / "jacobian.npz",
