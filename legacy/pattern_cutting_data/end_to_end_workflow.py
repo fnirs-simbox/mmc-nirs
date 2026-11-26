@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.24.0"
+__generated_with = "0.25.2"
 app = marimo.App(width="medium")
 
 
@@ -21,11 +21,13 @@ def _():
         prepare_probe,
     )
     from mmcnirs.mmc.jacobian import generate_jacobian
+    from mmcnirs.mmc.runtime import is_cuda_available
     from mmcnirs.utils.probe_utils import load_channel_pairs_from_snirf
 
     return (
         Path,
         generate_jacobian,
+        is_cuda_available,
         json,
         load_channel_pairs_from_snirf,
         load_config,
@@ -117,6 +119,7 @@ def _(
         prepared_mesh=prepared_mesh,
         channel_pairings=channel_pairings,
         experiment_config=experiment_config,
+        surface_radius_mm=15.0,
         plot=True,
         overwrite=rebuild_inputs.value,
     )
@@ -140,10 +143,12 @@ def _(experiment_config, json):
 
 @app.cell
 def _(mo):
+    # MMC v2026 reads Session.Photons as a signed 32-bit integer.
     photon_count = mo.ui.number(
         start=1,
+        stop=2_147_483_647,
         step=100_000,
-        value=5e8,
+        value=2_000_000_000,
         label="Photons per MMC run",
     )
     photon_count
@@ -201,23 +206,36 @@ def _(jacobian_inputs, mo, prepared_mesh, prepared_probe):
 
 
 @app.cell
-def _(mo):
+def _(is_cuda_available, mo):
     overwrite_jacobians = mo.ui.checkbox(value=True, label="Overwrite existing Jacobians")
+    _cuda_present = is_cuda_available()
+    mmc_backend = mo.ui.dropdown(
+        options=["cuda", "opencl", "sse"] if _cuda_present else ["opencl", "sse"],
+        value="cuda" if _cuda_present else "opencl",
+        label="MMC backend (CUDA detected)" if _cuda_present else "MMC backend (CUDA unavailable)",
+    )
+    refresh_mmc_manifest = mo.ui.checkbox(value=True, label="Refresh MMC version from Hugging Face")
     run_mmc = mo.ui.run_button(label="Run MMC")
-    mo.hstack([overwrite_jacobians, run_mmc])
-    return overwrite_jacobians, run_mmc
+    mo.vstack([
+        mo.md("New runs follow the refreshed HF manifest. CUDA is optional; OpenCL and CPU (sse) "
+              "remain available. Reusing a cached Jacobian does not update its MMC version."),
+        overwrite_jacobians, refresh_mmc_manifest, mmc_backend, run_mmc,
+    ])
+    return mmc_backend, overwrite_jacobians, refresh_mmc_manifest, run_mmc
 
 
 @app.cell
 def _(
     generate_jacobian,
     jacobian_paths,
+    mmc_backend,
     mmc_settings,
     mo,
     optical_properties,
     overwrite_jacobians,
     prepared_mesh,
     prepared_probe,
+    refresh_mmc_manifest,
     run_mmc,
     time,
     wavelengths,
@@ -236,6 +254,9 @@ def _(
             wavelength=_wavelength,
             save_path=_save_path,
             overwrite=overwrite_jacobians.value,
+            update_manifest=refresh_mmc_manifest.value,
+            compute_backend=mmc_backend.value,
+            timeout=300,
         )
         runtimes[_wavelength] = time.perf_counter() - _start
     return jacobians, runtimes
@@ -256,6 +277,11 @@ def _(jacobian_paths, jacobians, mo, np, runtimes, wavelengths):
             }
         )
     mo.ui.table(result_rows, selection=None, pagination=False)
+    return
+
+
+@app.cell
+def _():
     return
 
 

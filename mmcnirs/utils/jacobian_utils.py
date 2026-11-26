@@ -16,6 +16,7 @@ from .prepared_input_io import load_npz_archive, require_fields, save_npz_archiv
 
 JACOBIAN_TSTEP_SECONDS = 5e-9
 MMC_SETTING_KEYS = {"nphoton"}
+_MMC_JSON_MAX_PHOTON_COUNT = 2_147_483_647
 
 JACOBIAN_RESULT_KEYS = {
     "Green_d",
@@ -51,18 +52,22 @@ def build_jacobian_mmc_config(
         "method": "elem",
         "issaveexit": 1,
         "issavedet": 1,
-        "outputtype": "flux",
+        "isnormalized": 1,
+        "outputtype": "fluence",
+        "isreflect": 1,
+        "unitinmm": 1,
+        "basisorder": 1,
     }
 
 
-def validate_mmc_flux(flux: ArrayLike, node_count: int, description: str) -> np.ndarray:
+def validate_mmc_field(flux: ArrayLike, expected_count: int, description: str) -> np.ndarray:
     """Return an MMC flux vector after validating its node dimension."""
-    flux_array = np.asarray(flux, dtype=float)
-    if flux_array.shape != (node_count,):
-        raise ValueError(f"{description} flux must contain one value per mesh node")
-    if not np.all(np.isfinite(flux_array)):
+    field_array = np.asarray(flux, dtype=float)
+    if field_array.shape != (expected_count,):
+        raise ValueError(f"{description} flux must contain {expected_count} values, got {field_array.shape}")
+    if not np.all(np.isfinite(field_array)):
         raise ValueError(f"{description} flux contains non-finite values")
-    return flux_array
+    return field_array
 
 
 def validate_jacobian(
@@ -205,6 +210,11 @@ def validate_mmc_settings(mmc_settings: Mapping[str, Any]) -> int:
     value = mmc_settings["nphoton"]
     if isinstance(value, bool) or not isinstance(value, Real):
         raise TypeError("mmc_settings['nphoton'] must be a positive integer")
+    if value > _MMC_JSON_MAX_PHOTON_COUNT:
+        raise ValueError(
+            f"mmc_settings['nphoton'] must be at most {_MMC_JSON_MAX_PHOTON_COUNT:,} photons per MMC run. "
+            "MMC v2026 silently clamps larger JSON photon counts."
+        )
     if not np.isfinite(value) or value <= 0 or not float(value).is_integer():
         raise ValueError("mmc_settings['nphoton'] must be a positive integer")
     return int(value)

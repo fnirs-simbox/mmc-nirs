@@ -23,17 +23,11 @@ to build synthetic fNIRS data.
 
 ## Installation
 
-`mmcnirs` requires Python 3.12–3.14. Install it from a local checkout:
+`mmcnirs` requires Python 3.12–3.14. From the repository root, install the
+runtime dependencies pinned in `uv.lock`.
 
 ```bash
-python -m pip install .
-```
-
-For development with the test and pre-commit dependencies:
-
-```bash
-uv sync --all-extras
-uv run pre-commit install
+uv sync --locked
 ```
 
 ## Load a default experiment
@@ -104,13 +98,32 @@ prepared mesh, registered probe, wavelength-specific MMC inputs, and generated
 Jacobians:
 
 ```bash
-uv run marimo edit workflow_example/end_to_end_workflow.py
+uv run --locked --extra all marimo edit workflow_example/end_to_end_workflow.py
 ```
 
 It downloads the `e2e-files` inputs and Colin27 standard head through the
 central Hugging Face loader. When the workflow first runs MMC, the appropriate
 runtime is downloaded, checksum-verified, and installed in the user's managed
 cache.
+
+Jacobian generation accepts up to 2,147,483,647 photons per source or detector
+run, the MMC v2026 JSON ceiling. MMC silently clamps counts above that ceiling,
+which can give the captured baseline `mea0` the wrong normalization.
+
+## Probe direction radius
+
+`register_probe(..., surface_radius_mm=15.0)` computes inward directions by
+averaging triangle normals over a connected surface patch within the specified
+radius in millimetres. The radius changes directions, not registered positions.
+`prepare_probe(..., surface_radius_mm=15.0)` explicitly selects the same radius;
+without an override it uses `probe_settings.surface_radius_mm`, defaulting to 15.
+New probe archives record `direction_surface_radius_mm`.
+
+Use `overwrite=True` to regenerate older cached probes. An explicit radius cannot
+reuse a cache with missing or different radius metadata. The placement-analysis
+notebook checks the stored vectors, their inward orientation, and their stability
+under small position and radius changes; 15 mm remains a tested default rather
+than a guarantee for every mesh or montage.
 
 ## Hugging Face connection
 
@@ -153,6 +166,28 @@ under the platform's managed user cache:
 
 Set `MMCNIRS_CACHE_DIR` to override the runtime cache location.
 
+Installations coexist under `runtime/<version>/<platform>/`. The default version
+comes from Hugging Face's `mmc-runtime/manifest.json`; no release is hardcoded in
+Python. Cached manifests and executables are reused without remote checks unless
+`update_manifest=True` refreshes the root manifest. If its version changed, the
+new platform archive is downloaded, SHA-256 verified, and installed. Subsequent
+default calls use that version. Explicit versions use their version-specific
+manifest and take precedence, including when refreshing the root manifest.
+
+```python
+from mmcnirs.mmc.runtime import get_mmc_executable
+
+previous = get_mmc_executable(version="v2025.10")
+current = get_mmc_executable(version="v2026")
+recommended = get_mmc_executable(update_manifest=True)
+cached_default = get_mmc_executable()  # No remote check.
+```
+
+`run_mmc(..., version="v2026", update_manifest=False)` and
+`generate_jacobian(..., version="v2026", update_manifest=False)` accept the same
+options. A Jacobian job resolves the executable once for all source and detector
+runs. Returning an existing saved Jacobian does not trigger runtime discovery.
+
 ### Licensing
 
 The [MIT license](LICENSE) covers the `mmcnirs` software, not the data or MMC
@@ -178,9 +213,23 @@ licensed.
 
 ## Development
 
-Run the test suite and lint checks with:
+Install the development and test tools and enable the Git hooks.
 
 ```bash
-uv run pytest
-uv run ruff check .
+uv sync --locked --extra all
+uv run --locked --extra all pre-commit install
+```
+
+Run the test suite and lint checks.
+
+```bash
+uv run --locked --extra all pytest
+uv run --locked --extra all ruff check .
+```
+
+The optional runtime smoke test downloads the real v2026 binary and runs only
+`--version`, without a simulation:
+
+```bash
+MMCNIRS_TEST_RUNTIME_DOWNLOADS=1 uv run --locked --extra all pytest tests/mmc/test_runtime.py -k real_v2026
 ```

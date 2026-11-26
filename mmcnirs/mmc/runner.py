@@ -18,6 +18,10 @@ def run_mmc(
     working_directory: str | Path,
     timeout: float = 180,
     max_trials: int = 5,
+    extra_args=None,
+    version: str | None = None,
+    update_manifest: bool = False,
+    executable: str | Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run MMC for a configuration and return the completed process.
 
@@ -25,6 +29,10 @@ def run_mmc(
     ``working_directory``. Standard output and standard error are captured as
     text and included in execution errors when available. Timed-out runs are
     retried up to ``max_trials`` total attempts.
+
+    ``version`` and ``update_manifest`` are passed to the runtime resolver.
+    A pre-resolved ``executable`` takes precedence and skips runtime discovery,
+    allowing a multi-run job to use one installation throughout.
     """
     if max_trials < 1:
         raise ValueError("max_trials must be at least 1")
@@ -38,8 +46,12 @@ def run_mmc(
     if not resolved_config_path.is_file():
         raise FileNotFoundError(f"MMC configuration file not found: {resolved_config_path}")
 
-    executable = runtime.get_mmc_executable().resolve()
-    command = [str(executable), "-f", str(resolved_config_path), "-d", "1"]
+    if executable is None:
+        executable = runtime.get_mmc_executable(version=version, update_manifest=update_manifest)
+    resolved_executable = Path(executable).expanduser().resolve()
+    command = [str(resolved_executable), "-f", str(resolved_config_path), "-d", "1"]
+    if extra_args:
+        command.extend(str(arg) for arg in extra_args)
     for trial in range(1, max_trials + 1):
         try:
             completed_process = subprocess.run(

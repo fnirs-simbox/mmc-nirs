@@ -5,7 +5,6 @@ import numpy as np
 import pytest
 
 from mmcnirs.mmc.history import read_flux, read_history
-from mmcnirs.mmc.photons import compute_detected_photon_weights
 
 
 _HISTORY_HEADER = struct.Struct("<4s7IfIfi4I")
@@ -71,37 +70,18 @@ def test_read_history_preserves_weight_inputs(tmp_path: Path) -> None:
     np.testing.assert_array_equal(detected_photons["w0"], [0.5, 0.25])
     assert detected_photons["unitinmm"] == 2.0
 
-    properties = np.array(
-        [
-            [0.0, 0.0, 1.0, 1.0],
-            [0.1, 1.0, 0.9, 1.4],
-            [0.2, 1.0, 0.9, 1.4],
-        ]
-    )
-    actual_weights = compute_detected_photon_weights(
-        detected_photons,
-        optical_properties=properties,
-    )
-    expected_weights = np.array([0.5, 0.25]) * np.exp(-np.array([1.0, 2.2]))
-    np.testing.assert_allclose(
-        actual_weights,
-        expected_weights,
-        rtol=1e-12,
-        atol=1e-14,
-    )
 
-
-def test_read_history_concatenates_compatible_blocks(tmp_path: Path) -> None:
+def test_read_history_concatenates_single_medium_blocks(tmp_path: Path) -> None:
     savedetflag = (1 << 0) | (1 << 2)
     first = _history_block(
-        np.array([[1.0, 2.0, 3.0]]),
-        medium_count=2,
+        np.array([[1.0, 2.0]]),
+        medium_count=1,
         savedetflag=savedetflag,
         seed_bytes=4,
     )
     second = _history_block(
-        np.array([[2.0, 4.0, 5.0]]),
-        medium_count=2,
+        np.array([[2.0, 4.0]]),
+        medium_count=1,
         savedetflag=savedetflag,
         seed_bytes=4,
     )
@@ -111,27 +91,9 @@ def test_read_history_concatenates_compatible_blocks(tmp_path: Path) -> None:
     detected_photons = read_history(history_path)
 
     np.testing.assert_array_equal(detected_photons["detid"], [1.0, 2.0])
-    np.testing.assert_array_equal(
-        detected_photons["ppath"],
-        [[2.0, 3.0], [4.0, 5.0]],
-    )
-
-
-def test_read_history_preserves_single_medium_vector_shape(tmp_path: Path) -> None:
-    savedetflag = (1 << 0) | (1 << 2)
-    history_path = tmp_path / "simulation.mch"
-    history_path.write_bytes(
-        _history_block(
-            np.array([[1.0, 2.0], [2.0, 3.0]]),
-            medium_count=1,
-            savedetflag=savedetflag,
-        )
-    )
-
-    detected_photons = read_history(history_path)
-
-    np.testing.assert_array_equal(detected_photons["detid"], [1.0, 2.0])
-    np.testing.assert_array_equal(detected_photons["ppath"], [[2.0], [3.0]])
+    np.testing.assert_array_equal(detected_photons["ppath"], [[2.0], [4.0]])
+    np.testing.assert_array_equal(detected_photons["detected_counts"], [1, 1])
+    np.testing.assert_array_equal(detected_photons["saved_counts"], [1, 1])
 
 
 def test_read_history_accepts_mmc_default_layout_when_savedetflag_is_zero(tmp_path: Path) -> None:

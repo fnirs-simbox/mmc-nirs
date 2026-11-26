@@ -19,6 +19,7 @@ from mmcnirs.utils.probe_utils import (
     as_channel_pairing_array,
     normalize_channel_pairings,
     validate_probe_settings,
+    validate_surface_radius_mm,
 )
 from .register_probe import register_probe
 
@@ -60,6 +61,8 @@ def prepare_probe(
     plot: bool = False,
     save_probe: bool = True,
     overwrite: bool = False,
+    *,
+    surface_radius_mm: float | None = None,
 ) -> dict[str, np.ndarray]:
     """Register a probe to a prepared mesh for Jacobian generation.
 
@@ -100,12 +103,12 @@ def prepare_probe(
         - ``probe_settings.short_separation_arg``: a finite, non-negative float
           distance in millimetres when the flag is ``"distance"``; when the
           flag is ``"index"``, a list of zero-based channel indices.
-        - ``probe_settings.embedding_step``: positive scalar embedding distance
-          in millimetres applied per iteration.
-        - ``probe_settings.max_embedding_steps``: non-negative integer maximum
-          number of embedding iterations.
+        - ``probe_settings.embedding_step``: positive scalar approximate embedding distance
+          between embedded optode (inside mesh) and mesh surface in millimetres.
+        - ``probe_settings.surface_radius_mm``: optional positive radius in mesh
+          millimetres for connected surface-normal averaging; defaults to 15.
 
-        ``probe_settings`` and all six of its fields are required even when a
+        ``probe_settings`` and all five of its fields are required even when a
         previously prepared probe archive is reused.
     plot : bool, default=False
         Whether to create the registration diagnostic and save it as
@@ -116,6 +119,12 @@ def prepare_probe(
     overwrite : bool, default=False
         Scalar flag indicating whether an existing prepared archive should be
         replaced instead of loaded.
+    surface_radius_mm : float or None, default=None
+        Override ``probe_settings.surface_radius_mm`` for inward surface-normal
+        averaging. An omitted setting defaults to 15 mm. Affects directions
+        only. New archives record this value as ``direction_surface_radius_mm``.
+        Existing archives are not regenerated unless ``overwrite=True``. An
+        explicit radius requires matching cache metadata or an overwrite.
 
     Returns
     -------
@@ -126,26 +135,30 @@ def prepare_probe(
         shape ``(n_channels, 2)``; and separation-index fields are one-dimensional.
     """
     probe_settings = validate_probe_settings(experiment_config)
-    normalized_flag = probe_settings["short_separation_flag"]
-    short_separation_arg = probe_settings["short_separation_arg"]
+    explicit_radius = surface_radius_mm is not None or "surface_radius_mm" in experiment_config["probe_settings"]
+    if surface_radius_mm is not None:
+        probe_settings["surface_radius_mm"] = validate_surface_radius_mm(surface_radius_mm)
     mesh = validate_prepared_mesh(prepared_mesh)
 
     archive_path = resolve_prepared_input_path(experiment_config, "probefile")
     if archive_path.is_file() and not overwrite:
         probe = load_npz_archive(archive_path, _PROBE_ARCHIVE_KEYS)
+        cached_radius = probe.get("direction_surface_radius_mm")
+        if cached_radius is None and explicit_radius:
+            raise ValueError("Cached probe has no surface-radius metadata; use overwrite=True to register it")
+        if cached_radius is not None:
+            if np.asarray(cached_radius).ndim != 0:
+                raise ValueError("Cached direction_surface_radius_mm must be a scalar; use overwrite=True")
+            radius = validate_surface_radius_mm(np.asarray(cached_radius).item())
+            if radius != probe_settings["surface_radius_mm"]:
+                raise ValueError("Cached probe surface radius differs from the requested value; use overwrite=True")
         if plot:
             _save_probe_registration_diagnostic(mesh, probe, archive_path)
         return probe
 
-    pairs = as_channel_pairing_array(channel_pairings)
-    if normalized_flag == "index":
-        short_indices = np.asarray(short_separation_arg, dtype=np.intp)
-        if np.any(short_indices < 0) or np.any(short_indices >= len(pairs)):
-            raise ValueError("short-separation channel indices are out of range")
-
     (
-        registered_sources,
-        registered_detectors,
+        source_positions,
+        detector_positions,
         source_directions,
         detector_directions,
         source_elements,
@@ -158,28 +171,26 @@ def prepare_probe(
         probe_orientation=probe_settings["probe_orientation"],
         probe_units=probe_settings["probe_units"],
         embedding_step=probe_settings["embedding_step"],
-        max_embedding_steps=probe_settings["max_embedding_steps"],
+        surface_radius_mm=probe_settings["surface_radius_mm"],
     )
 
-    normalized_pairings = normalize_channel_pairings(
-        pairs,
-        len(registered_sources),
-        len(registered_detectors),
-    )
-    source_indices = normalized_pairings[:, 0]
-    detector_indices = normalized_pairings[:, 1]
-
-    if normalized_flag == "distance":
-        distances = np.linalg.norm(
-            registered_sources[source_indices] - registered_detectors[detector_indices],
-            axis=1,
-        )
-        short_indices = np.flatnonzero(distances <= short_separation_arg)
+    pairs = as_channel_pairing_array(channel_pairings)
+    normalized_pairings = normalize_channel_pairings(pairs, len(source_positions), len(detector_positions))
+    if probe_settings["short_separation_flag"] == "index":
+        short_indices = np.asarray(probe_settings["short_separation_arg"], dtype=np.intp)
+        if np.any(short_indices < 0) or np.any(short_indices >= len(pairs)):
+            raise ValueError("short-separation channel indices are out of range")
+    elif probe_settings["short_separation_flag"] == "distance":
+        source_indices, detector_indices = normalized_pairings[:, 0], normalized_pairings[:, 1]
+        distances = np.linalg.norm(source_positions[source_indices] - detector_positions[detector_indices], axis=1)
+        short_indices = np.flatnonzero(distances <= probe_settings["short_separation_arg"])
+    else:
+        raise ValueError(f"normalization_flag {probe_settings['short_separation_flag']} unknown.")
 
     long_indices = np.setdiff1d(np.arange(len(pairs), dtype=np.intp), short_indices)
     probe = {
-        "sourcepos": registered_sources,
-        "detpos": registered_detectors,
+        "sourcepos": source_positions,
+        "detpos": detector_positions,
         "sourcedir": source_directions,
         "detnorms": detector_directions,
         "source_elements": source_elements,
@@ -187,6 +198,7 @@ def prepare_probe(
         "channel_pairings": normalized_pairings,
         "short_separation_indices": short_indices,
         "long_separation_indices": long_indices,
+        "direction_surface_radius_mm": np.asarray(probe_settings["surface_radius_mm"]),
     }
     if plot:
         _save_probe_registration_diagnostic(mesh, probe, archive_path)
