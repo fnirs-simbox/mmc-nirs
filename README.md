@@ -23,17 +23,11 @@ to build synthetic fNIRS data.
 
 ## Installation
 
-`mmcnirs` requires Python 3.12–3.14. Install it from a local checkout:
+`mmcnirs` requires Python 3.12–3.14. From the repository root, install the
+runtime dependencies pinned in `uv.lock`.
 
 ```bash
-python -m pip install .
-```
-
-For development with the test and pre-commit dependencies:
-
-```bash
-uv sync --all-extras
-uv run pre-commit install
+uv sync --locked
 ```
 
 ## Load a default experiment
@@ -104,7 +98,7 @@ prepared mesh, registered probe, wavelength-specific MMC inputs, and generated
 Jacobians:
 
 ```bash
-uv run marimo edit workflow_example/end_to_end_workflow.py
+uv run --locked --extra all marimo edit workflow_example/end_to_end_workflow.py
 ```
 
 It downloads the `e2e-files` inputs and Colin27 standard head through the
@@ -215,16 +209,23 @@ licensed.
 
 ## Development
 
-Run the test suite and lint checks with:
+Install the development and test tools and enable the Git hooks.
 
 ```bash
-uv run pytest
-uv run ruff check .
+uv sync --locked --extra all
+uv run --locked --extra all pre-commit install
+```
+
+Run the test suite and lint checks.
+
+```bash
+uv run --locked --extra all pytest
+uv run --locked --extra all ruff check .
 ```
 
 The optional runtime smoke test downloads the real v2026 binary and runs only
 `--version`, without a simulation:
 
 ```bash
-MMCNIRS_TEST_RUNTIME_DOWNLOADS=1 uv run pytest tests/mmc/test_runtime.py -k real_v2026
+MMCNIRS_TEST_RUNTIME_DOWNLOADS=1 uv run --locked --extra all pytest tests/mmc/test_runtime.py -k real_v2026
 ```
