@@ -439,10 +439,12 @@ def _(experiment_config, json):
 
 @app.cell
 def _(mo):
+    # MMC v2026 reads Session.Photons as a signed 32-bit integer.
     photon_count = mo.ui.number(
         start=1,
+        stop=2_147_483_647,
         step=100_000,
-        value=1_000_000,
+        value=2_000_000_000,
         label="Photons per MMC run",
     )
     photon_count

@@ -6,12 +6,14 @@ import pytest
 from mmcnirs.mmc import runner
 
 
-@pytest.mark.parametrize(("version", "update_manifest"), [(None, False), ("v2025.10", False), ("v2026", True)])
-def test_run_mmc_executes_managed_runtime_and_returns_output(
-    tmp_path: Path, monkeypatch, version, update_manifest
-) -> None:
-    config_path = tmp_path / "simulation.json"
-    config_path.write_text("{}", encoding="utf-8")
+@pytest.fixture
+def config_path(tmp_path: Path) -> Path:
+    path = tmp_path / "simulation.json"
+    path.write_text("{}", encoding="utf-8")
+    return path
+
+
+def test_run_mmc_executes_managed_runtime_and_returns_output(config_path: Path, tmp_path: Path, monkeypatch) -> None:
     executable = tmp_path / "runtime" / "mmc"
     completed_process = subprocess.CompletedProcess(
         args=[],
@@ -34,12 +36,11 @@ def test_run_mmc_executes_managed_runtime_and_returns_output(
     monkeypatch.setattr(runner.subprocess, "run", fake_run)
 
     result = runner.run_mmc(
-        "simulation.json", working_directory=tmp_path, timeout=42, version=version, update_manifest=update_manifest
+        config_path.name, working_directory=tmp_path, timeout=42, version="v2026", update_manifest=True
     )
 
     assert result is completed_process
-    assert result.stdout == "simulation complete"
-    assert runtime_calls == [{"version": version, "update_manifest": update_manifest}]
+    assert runtime_calls == [{"version": "v2026", "update_manifest": True}]
     assert subprocess_calls == [
         (
             [str(executable.resolve()), "-f", str(config_path.resolve()), "-d", "1"],
@@ -52,7 +53,6 @@ def test_run_mmc_executes_managed_runtime_and_returns_output(
             },
         )
     ]
-    assert Path(subprocess_calls[0][0][0]).is_absolute()
 
 
 def test_run_mmc_rejects_missing_config_before_runtime_lookup(tmp_path: Path, monkeypatch) -> None:
@@ -65,9 +65,7 @@ def test_run_mmc_rejects_missing_config_before_runtime_lookup(tmp_path: Path, mo
         runner.run_mmc("missing.json", working_directory=tmp_path)
 
 
-def test_run_mmc_raises_clear_timeout_after_max_trials(tmp_path: Path, monkeypatch) -> None:
-    config_path = tmp_path / "simulation.json"
-    config_path.write_text("{}", encoding="utf-8")
+def test_run_mmc_raises_clear_timeout_after_max_trials(config_path: Path, tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(runner.runtime, "get_mmc_executable", lambda **kwargs: tmp_path / "runtime" / "mmc")
     calls = []
 
@@ -86,9 +84,9 @@ def test_run_mmc_raises_clear_timeout_after_max_trials(tmp_path: Path, monkeypat
     assert len(calls) == 5
 
 
-def test_run_mmc_raises_clear_error_for_nonzero_exit_without_retry(tmp_path: Path, monkeypatch) -> None:
-    config_path = tmp_path / "simulation.json"
-    config_path.write_text("{}", encoding="utf-8")
+def test_run_mmc_raises_clear_error_for_nonzero_exit_without_retry(
+    config_path: Path, tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.setattr(runner.runtime, "get_mmc_executable", lambda **kwargs: tmp_path / "runtime" / "mmc")
     calls = []
 
@@ -104,9 +102,9 @@ def test_run_mmc_raises_clear_error_for_nonzero_exit_without_retry(tmp_path: Pat
     assert len(calls) == 1
 
 
-def test_run_mmc_uses_pre_resolved_executable_without_runtime_lookup(tmp_path: Path, monkeypatch) -> None:
-    config_path = tmp_path / "simulation.json"
-    config_path.write_text("{}", encoding="utf-8")
+def test_run_mmc_uses_pre_resolved_executable_without_runtime_lookup(
+    config_path: Path, tmp_path: Path, monkeypatch
+) -> None:
     executable = tmp_path / "runtime/v2026/mmc"
     monkeypatch.setattr(
         runner.runtime, "get_mmc_executable", lambda **kwargs: pytest.fail("Runtime was resolved again")

@@ -106,6 +106,10 @@ central Hugging Face loader. When the workflow first runs MMC, the appropriate
 runtime is downloaded, checksum-verified, and installed in the user's managed
 cache.
 
+Jacobian generation accepts up to 2,147,483,647 photons per source or detector
+run, the MMC v2026 JSON ceiling. MMC silently clamps counts above that ceiling,
+which can give the captured baseline `mea0` the wrong normalization.
+
 ## Probe direction radius
 
 `register_probe(..., surface_radius_mm=15.0)` computes inward directions by

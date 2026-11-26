@@ -43,34 +43,17 @@ def test_detected_photon_weights(
     np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-14)
 
 
-def test_detected_photon_weights_apply_initial_weights(
+def test_detected_photon_weights_apply_launch_weights_and_pathlength_units(
     detected_photons: dict[str, np.ndarray],
     optical_properties: np.ndarray,
 ) -> None:
     initial_weights = np.array([0.5, 0.25, 0.75])
-    detected_photons["w0"] = initial_weights
+    detected_photons.update(w0=initial_weights, unitinmm=2.5)
 
-    actual = compute_detected_photon_weights(
-        detected_photons,
-        optical_properties=optical_properties,
-    )
+    with pytest.warns(UserWarning, match="non-unit launch weights"):
+        actual = compute_detected_photon_weights(detected_photons, optical_properties=optical_properties)
 
-    expected = initial_weights * np.exp(-np.array([0.26, 0.64, 0.22]))
-    np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-14)
-
-
-def test_detected_photon_weights_apply_unitinmm(
-    detected_photons: dict[str, np.ndarray],
-    optical_properties: np.ndarray,
-) -> None:
-    detected_photons["unitinmm"] = 2.5
-
-    actual = compute_detected_photon_weights(
-        detected_photons,
-        optical_properties=optical_properties,
-    )
-
-    expected = np.exp(-2.5 * np.array([0.26, 0.64, 0.22]))
+    expected = initial_weights * np.exp(-2.5 * np.array([0.26, 0.64, 0.22]))
     np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-14)
 
 

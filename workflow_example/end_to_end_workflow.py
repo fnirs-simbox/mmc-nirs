@@ -460,10 +460,12 @@ def _(experiment_config, json):
 
 @app.cell
 def _(mo):
+    # MMC v2026 reads Session.Photons as a signed 32-bit integer.
     photon_count = mo.ui.number(
         start=1,
+        stop=2_147_483_647,
         step=100_000,
-        value=4e9,
+        value=2_000_000_000,
         label="Photons per MMC run",
     )
     photon_count
@@ -616,7 +618,7 @@ def _(
             overwrite=overwrite_jacobians.value,
             update_manifest=refresh_mmc_manifest.value,
             compute_backend=mmc_backend.value,
-            timeout=600,
+            timeout=300,
         )
         generation_seconds[_run_wavelength] = time.perf_counter() - start_time
         print(f"{_run_wavelength} wavelength finished.")

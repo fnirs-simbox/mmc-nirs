@@ -16,6 +16,7 @@ from .prepared_input_io import load_npz_archive, require_fields, save_npz_archiv
 
 JACOBIAN_TSTEP_SECONDS = 5e-9
 MMC_SETTING_KEYS = {"nphoton"}
+_MMC_JSON_MAX_PHOTON_COUNT = 2_147_483_647
 
 JACOBIAN_RESULT_KEYS = {
     "Green_d",
@@ -209,6 +210,11 @@ def validate_mmc_settings(mmc_settings: Mapping[str, Any]) -> int:
     value = mmc_settings["nphoton"]
     if isinstance(value, bool) or not isinstance(value, Real):
         raise TypeError("mmc_settings['nphoton'] must be a positive integer")
+    if value > _MMC_JSON_MAX_PHOTON_COUNT:
+        raise ValueError(
+            f"mmc_settings['nphoton'] must be at most {_MMC_JSON_MAX_PHOTON_COUNT:,} photons per MMC run. "
+            "MMC v2026 silently clamps larger JSON photon counts."
+        )
     if not np.isfinite(value) or value <= 0 or not float(value).is_integer():
         raise ValueError("mmc_settings['nphoton'] must be a positive integer")
     return int(value)

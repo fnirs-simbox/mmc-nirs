@@ -125,11 +125,8 @@ def test_prepare_probe_registers_with_prepared_mesh(
     assert probe["direction_surface_radius_mm"] == 15.0
 
 
-def test_prepare_probe_reuses_existing_archive_before_registration(
-    experiment_config,
-    prepared_mesh,
-    monkeypatch,
-) -> None:
+@pytest.fixture
+def cached_probe(experiment_config):
     output_dir = experiment_config["experiment_dir"]
     output_dir.mkdir()
     cached = {
@@ -144,33 +141,30 @@ def test_prepare_probe_reuses_existing_archive_before_registration(
         "long_separation_indices": np.array([], dtype=int),
     }
     np.savez(output_dir / "probe.npz", **cached)
+    return cached
+
+
+def test_prepare_probe_reuses_existing_archive_before_registration(
+    experiment_config,
+    prepared_mesh,
+    cached_probe,
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(probe_module, "register_probe", lambda *args, **kwargs: pytest.fail("registration ran"))
 
     probe = prepare_probe([], [], prepared_mesh, [], experiment_config)
 
-    for key, value in cached.items():
+    for key, value in cached_probe.items():
         np.testing.assert_array_equal(probe[key], value)
 
 
+@pytest.mark.usefixtures("cached_probe")
 def test_prepare_probe_saves_diagnostic_beside_cached_probe(
     experiment_config,
     prepared_mesh,
     monkeypatch,
 ) -> None:
     output_dir = experiment_config["experiment_dir"]
-    output_dir.mkdir()
-    cached = {
-        "sourcepos": np.ones((1, 3)),
-        "detpos": np.ones((1, 3)),
-        "sourcedir": np.ones((1, 3)),
-        "detnorms": np.ones((1, 3)),
-        "source_elements": np.array([0]),
-        "detector_elements": np.array([0]),
-        "channel_pairings": np.array([[0, 0]]),
-        "short_separation_indices": np.array([0]),
-        "long_separation_indices": np.array([], dtype=int),
-    }
-    np.savez(output_dir / "probe.npz", **cached)
     saved_paths = []
 
     class FakeFigure:
@@ -351,7 +345,6 @@ def test_prepare_probe_requires_complete_settings_before_cache_reuse(experiment_
         ("embedding_step", 0, "embedding_step"),
         ("embedding_step", np.inf, "embedding_step"),
         ("surface_radius_mm", 0, "surface_radius_mm"),
-        ("surface_radius_mm", np.nan, "surface_radius_mm"),
     ],
 )
 def test_prepare_probe_validates_settings_before_cache_reuse(

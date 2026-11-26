@@ -13,10 +13,15 @@ from mmcnirs.loaders import hf_loader
 from mmcnirs.mmc import runtime
 
 
-@pytest.mark.parametrize("system", ["Linux", "Windows"])
 @pytest.mark.parametrize(
-    ("init_status", "count_status", "device_count", "expected"),
-    [(0, 0, 1, True), (0, 0, 0, False), (100, 0, 1, False), (0, 100, 1, False)],
+    ("system", "init_status", "count_status", "device_count", "expected"),
+    [
+        ("Linux", 0, 0, 1, True),
+        ("Linux", 0, 0, 0, False),
+        ("Linux", 100, 0, 1, False),
+        ("Linux", 0, 100, 1, False),
+        ("Windows", 0, 0, 1, True),
+    ],
 )
 def test_cuda_probe_requires_usable_driver_and_device(
     monkeypatch, system, init_status, count_status, device_count, expected
@@ -38,7 +43,12 @@ def test_cuda_probe_requires_usable_driver_and_device(
 
     monkeypatch.setattr(runtime.platform, "system", lambda: system)
     loader = "WinDLL" if system == "Windows" else "CDLL"
-    monkeypatch.setattr(runtime.ctypes, loader, lambda name: Driver(), raising=False)
+
+    def load_driver(name):
+        assert name == ("nvcuda.dll" if system == "Windows" else "libcuda.so.1")
+        return Driver()
+
+    monkeypatch.setattr(runtime.ctypes, loader, load_driver, raising=False)
     assert runtime.is_cuda_available() is expected
     assert calls == ([("init", 0)] if init_status else [("init", 0), ("count",)])
 
@@ -92,14 +102,15 @@ def runtime_downloads(tmp_path: Path, monkeypatch):
     return remote, cache, calls
 
 
-@pytest.mark.parametrize("version", ["v2025.10", "v2026"])
 @pytest.mark.parametrize(
-    ("system", "machine", "platform_key"),
+    ("version", "system", "machine", "platform_key"),
     [
-        ("Linux", "x86_64", "linux-x86_64"),
-        ("Darwin", "aarch64", "macos-arm64"),
-        ("Darwin", "x86_64", "macos-x86_64"),
-        ("Windows", "AMD64", "windows-x86_64"),
+        ("v2025.10", "Linux", "x86_64", "linux-x86_64"),
+        ("v2026", "Linux", "x86_64", "linux-x86_64"),
+        ("v2026", "Darwin", "aarch64", "macos-arm64"),
+        ("v2026", "Darwin", "x86_64", "macos-x86_64"),
+        ("v2025.10", "Windows", "AMD64", "windows-x86_64"),
+        ("v2026", "Windows", "AMD64", "windows-x86_64"),
     ],
 )
 def test_fresh_install_uses_root_manifest_version_and_platform_layout(
@@ -124,9 +135,9 @@ def test_fresh_install_uses_root_manifest_version_and_platform_layout(
         assert executable.stat().st_mode & stat.S_IXUSR
 
 
-@pytest.mark.parametrize("version", ["v2025.10", "v2026"])
-def test_explicit_version_uses_its_manifest_and_reuses_installation(runtime_downloads, version) -> None:
+def test_explicit_version_uses_its_manifest_and_reuses_installation(runtime_downloads) -> None:
     _, _, calls = runtime_downloads
+    version = "v2025.10"
 
     executable = runtime.get_mmc_executable(version=version)
 

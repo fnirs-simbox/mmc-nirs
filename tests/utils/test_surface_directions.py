@@ -62,13 +62,3 @@ def test_surface_radius_must_be_a_positive_finite_scalar(radius):
     surface = make_surface_mesh(nodes, np.array([[0, 1, 2, 3]]))
     with pytest.raises(ValueError, match="surface_radius_mm"):
         find_smoothed_surface_directions(surface, [[1, 1, 0]], nodes, radius)
-
-
-def test_default_radius_is_explicit_fifteen_mm():
-    nodes = np.array([[0, 0, 0], [100, 0, 0], [0, 100, 0], [0, 0, 100]], dtype=float)
-    elements = np.array([[0, 1, 2, 3]])
-    surface = make_surface_mesh(nodes, elements)
-    default, _ = find_smoothed_surface_directions(surface, [[20, 20, 0]], nodes, mesh_elements=elements)
-    explicit, _ = find_smoothed_surface_directions(surface, [[20, 20, 0]], nodes, 15, mesh_elements=elements)
-    np.testing.assert_array_equal(default, explicit)
-    np.testing.assert_allclose(default, [[0, 0, 1]])

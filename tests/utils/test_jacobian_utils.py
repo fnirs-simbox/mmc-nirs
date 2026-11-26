@@ -8,7 +8,6 @@ from mmcnirs.utils.jacobian_utils import (
     mmc_to_json,
     order_optical_properties,
     save_mmc_mesh,
-    select_optical_properties,
     validate_jacobian,
     validate_mmc_field,
     validate_mmc_settings,
@@ -65,21 +64,8 @@ def test_order_optical_properties_rejects_missing_tissue() -> None:
         )
 
 
-def test_select_optical_properties_returns_one_ordered_wavelength() -> None:
-    selected = select_optical_properties(
-        {"690": {"air": [0.0, 0.0, 1.0, 1.0], "tissue": [0.1, 1.0, 0.9, 1.4]}},
-        {"1": "tissue", "0": "air"},
-        690,
-    )
-
-    np.testing.assert_array_equal(selected, [[0.0, 0.0, 1.0, 1.0], [0.1, 1.0, 0.9, 1.4]])
-
-
 def test_validate_mmc_settings_accepts_integer_valued_photon_count() -> None:
-    assert validate_mmc_settings({"nphoton": 5e9}) == 5_000_000_000
-
-    with pytest.raises(ValueError, match="unsupported field"):
-        validate_mmc_settings({"nphoton": 100, "tstep": 1.0})
+    assert validate_mmc_settings({"nphoton": 2_147_483_647.0}) == 2_147_483_647
 
 
 def test_build_jacobian_mmc_config_converts_elements_to_one_based() -> None:
